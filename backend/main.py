@@ -48,6 +48,7 @@ def health():
     return {
         "status": "ok",
         "db": "postgresql" if USE_POSTGRES else "sqlite",
+        "version": "2.1.0",
         "startup_error": _startup_error or None,
     }
 
