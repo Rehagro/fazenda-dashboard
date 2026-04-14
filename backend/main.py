@@ -45,12 +45,22 @@ async def on_startup():
 
 @app.get("/api/health")
 def health():
-    return {
+    info: dict = {
         "status": "ok",
         "db": "postgresql" if USE_POSTGRES else "sqlite",
         "version": "2.1.0",
         "startup_error": _startup_error or None,
     }
+    if USE_POSTGRES:
+        from database import _parse_pg_url, DATABASE_URL
+        try:
+            p = _parse_pg_url(DATABASE_URL)
+            info["db_host"] = p.get("host")
+            info["db_user"] = p.get("user")
+            info["db_port"] = p.get("port")
+        except Exception as e:
+            info["parse_error"] = str(e)
+    return info
 
 
 # ──────────────────────────────────────────────
