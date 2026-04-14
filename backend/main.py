@@ -27,8 +27,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    init_db()
-    seed_data()
+    try:
+        init_db()
+        seed_data()
+    except Exception as e:
+        import traceback
+        print("STARTUP ERROR:", e)
+        traceback.print_exc()
 
 
 # ──────────────────────────────────────────────

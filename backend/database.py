@@ -33,7 +33,11 @@ LOTES = list(LOTE_PARAMS.keys())
 
 def get_connection():
     if USE_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
+        url = DATABASE_URL
+        if 'sslmode' not in url:
+            sep = '&' if '?' in url else '?'
+            url = url + sep + 'sslmode=require'
+        conn = psycopg2.connect(url)
         return conn
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row

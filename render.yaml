@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fazenda-dashboard
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+    autoDeploy: true
