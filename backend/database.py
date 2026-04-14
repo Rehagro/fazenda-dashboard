@@ -4,7 +4,6 @@ import os
 import random
 import sqlite3
 from datetime import date, timedelta
-from urllib.parse import urlparse, unquote
 
 # ── Detecção de banco ──────────────────────────────────────────────────────
 # Render/Supabase entregam postgres:// — psycopg2 precisa de postgresql://
@@ -32,19 +31,26 @@ LOTES = list(LOTE_PARAMS.keys())
 
 # ── Conexão ────────────────────────────────────────────────────────────────
 
+def _parse_pg_url(url: str) -> dict:
+    """Parseia postgresql://user:pass@host:port/db sem usar urlparse."""
+    url = url.replace('postgres://', 'postgresql://', 1)
+    rest = url[len('postgresql://'):]          # user:pass@host:port/db
+    userinfo, hostinfo = rest.rsplit('@', 1)
+    user, password = userinfo.split(':', 1)
+    hostport, dbname = hostinfo.split('/', 1)
+    dbname = dbname.split('?')[0]
+    if ':' in hostport:
+        host, port_str = hostport.rsplit(':', 1)
+        port = int(port_str)
+    else:
+        host, port = hostport, 5432
+    return {'user': user, 'password': password, 'host': host,
+            'port': port, 'dbname': dbname, 'sslmode': 'require'}
+
+
 def get_connection():
     if USE_POSTGRES:
-        # Parseia a URL manualmente para preservar o username completo
-        # (ex: postgres.projectref) que psycopg2 trunca ao usar a URI direta
-        p = urlparse(DATABASE_URL)
-        conn = psycopg2.connect(
-            host=p.hostname,
-            port=p.port or 5432,
-            dbname=p.path.lstrip('/'),
-            user=unquote(p.username or ''),
-            password=unquote(p.password or ''),
-            sslmode='require',
-        )
+        conn = psycopg2.connect(**_parse_pg_url(DATABASE_URL))
         return conn
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
