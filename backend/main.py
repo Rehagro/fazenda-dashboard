@@ -25,15 +25,18 @@ app.add_middleware(
 )
 
 
+_startup_error: str = ""
+
 @app.on_event("startup")
 async def on_startup():
+    global _startup_error
     try:
         init_db()
         seed_data()
     except Exception as e:
         import traceback
-        print("STARTUP ERROR:", e)
-        traceback.print_exc()
+        _startup_error = traceback.format_exc()
+        print("STARTUP ERROR:", _startup_error)
 
 
 # ──────────────────────────────────────────────
@@ -42,7 +45,11 @@ async def on_startup():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "db": "postgresql" if USE_POSTGRES else "sqlite"}
+    return {
+        "status": "ok",
+        "db": "postgresql" if USE_POSTGRES else "sqlite",
+        "startup_error": _startup_error or None,
+    }
 
 
 # ──────────────────────────────────────────────
