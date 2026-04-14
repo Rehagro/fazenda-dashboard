@@ -4,6 +4,7 @@ import os
 import random
 import sqlite3
 from datetime import date, timedelta
+from urllib.parse import urlparse, unquote
 
 # ── Detecção de banco ──────────────────────────────────────────────────────
 # Render/Supabase entregam postgres:// — psycopg2 precisa de postgresql://
@@ -33,11 +34,17 @@ LOTES = list(LOTE_PARAMS.keys())
 
 def get_connection():
     if USE_POSTGRES:
-        url = DATABASE_URL
-        if 'sslmode' not in url:
-            sep = '&' if '?' in url else '?'
-            url = url + sep + 'sslmode=require'
-        conn = psycopg2.connect(url)
+        # Parseia a URL manualmente para preservar o username completo
+        # (ex: postgres.projectref) que psycopg2 trunca ao usar a URI direta
+        p = urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            host=p.hostname,
+            port=p.port or 5432,
+            dbname=p.path.lstrip('/'),
+            user=unquote(p.username or ''),
+            password=unquote(p.password or ''),
+            sslmode='require',
+        )
         return conn
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
