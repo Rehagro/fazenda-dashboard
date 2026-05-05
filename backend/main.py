@@ -52,7 +52,14 @@ def health():
     if not _db_ready:
         return {"status": "error", "db": "unavailable",
                 "detail": "Banco não inicializado — verifique DATABASE_URL no Render"}
-    return {"status": "ok", "db": "postgresql" if USE_POSTGRES else "sqlite"}
+    try:
+        conn = get_connection()
+        db_exec(conn, "SELECT 1")
+        conn.close()
+        return {"status": "ok", "db": "postgresql" if USE_POSTGRES else "sqlite"}
+    except Exception as exc:
+        logger.error("Health check DB query failed: %s", exc)
+        return {"status": "error", "db": "unavailable", "detail": str(exc)}
 
 
 # ──────────────────────────────────────────────
