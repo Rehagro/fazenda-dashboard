@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
@@ -25,10 +28,19 @@ app.add_middleware(
 )
 
 
+_db_ready = False
+
+
 @app.on_event("startup")
 async def on_startup():
-    init_db()
-    seed_data()
+    global _db_ready
+    try:
+        init_db()
+        seed_data()
+        _db_ready = True
+    except Exception as exc:
+        logger.error("Falha ao inicializar o banco de dados: %s", exc)
+        logger.error("Verifique a variável DATABASE_URL no painel do Render.")
 
 
 # ──────────────────────────────────────────────
@@ -37,6 +49,9 @@ async def on_startup():
 
 @app.get("/api/health")
 def health():
+    if not _db_ready:
+        return {"status": "error", "db": "unavailable",
+                "detail": "Banco não inicializado — verifique DATABASE_URL no Render"}
     return {"status": "ok", "db": "postgresql" if USE_POSTGRES else "sqlite"}
 
 
