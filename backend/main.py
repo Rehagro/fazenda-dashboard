@@ -393,8 +393,16 @@ async def upload_excel(file: UploadFile = File(...)):
             f"Colunas obrigatórias ausentes: {', '.join(sorted(missing))}. "
             "Baixe o template para ver o formato correto.")
 
-    df["data"] = pd.to_datetime(df["data"]).dt.date
-    df["eficiencia_alimentar"] = (df["leite_por_vaca"] / df["consumo_ms_vaca"]).round(4)
+    # remove linhas de descrição do template (ex: "AAAA-MM-DD", "Nome da Fazenda")
+    df = df[pd.to_datetime(df["data"], errors="coerce").notna()].copy()
+    if df.empty:
+        raise HTTPException(400, "Nenhuma linha com data válida encontrada. Verifique o formato da coluna 'data' (DD/MM/AAAA ou AAAA-MM-DD).")
+
+    try:
+        df["data"] = pd.to_datetime(df["data"], dayfirst=True).dt.date
+        df["eficiencia_alimentar"] = (df["leite_por_vaca"] / df["consumo_ms_vaca"]).round(4)
+    except Exception as e:
+        raise HTTPException(400, f"Erro ao processar dados: {e}")
     for col in OPTIONAL_COLS:
         if col not in df.columns:
             df[col] = None
