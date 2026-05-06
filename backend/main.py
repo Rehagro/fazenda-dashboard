@@ -375,10 +375,12 @@ async def upload_excel(file: UploadFile = File(...)):
     content = await file.read()
     try:
         if file.filename.endswith(".csv"):
+            enc = "utf-8-sig"
             try:
-                df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+                content.decode("utf-8-sig")
             except UnicodeDecodeError:
-                df = pd.read_csv(io.BytesIO(content), encoding="latin-1")
+                enc = "latin-1"
+            df = pd.read_csv(io.BytesIO(content), encoding=enc, sep=None, engine="python")
         else:
             df = pd.read_excel(io.BytesIO(content))
     except Exception as e:
