@@ -374,8 +374,13 @@ async def upload_excel(file: UploadFile = File(...)):
 
     content = await file.read()
     try:
-        df = pd.read_csv(io.BytesIO(content)) if file.filename.endswith(".csv") \
-             else pd.read_excel(io.BytesIO(content))
+        if file.filename.endswith(".csv"):
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                df = pd.read_csv(io.BytesIO(content), encoding="latin-1")
+        else:
+            df = pd.read_excel(io.BytesIO(content))
     except Exception as e:
         raise HTTPException(400, f"Erro ao ler arquivo: {e}")
 
