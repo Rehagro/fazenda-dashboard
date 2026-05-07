@@ -1,4 +1,5 @@
 import Icon from '../ui/Icon'
+import { templateUrl } from '../../api/client'
 
 const NAV = [
   {
@@ -93,6 +94,16 @@ export default function Sidebar({ tab, setTab, onUploadClick, lotesCount, A }) {
             <Icon name="upload" size={13} style={{ color: A.primaryDark }} />
             Upload Excel
           </button>
+          <a href={templateUrl} download style={{
+            marginTop: 8, width: '100%', padding: '7px 0', border: '1px solid rgba(255,255,255,0.35)',
+            background: 'transparent', color: 'rgba(255,255,255,0.9)',
+            fontWeight: 600, fontSize: 12, borderRadius: 8,
+            cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}>
+            <Icon name="download" size={13} />
+            Baixar Template
+          </a>
         </div>
       </div>
     </div>

@@ -75,17 +75,9 @@ export default function OverviewTab({ ctx, A }) {
 
   return (
     <>
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: A.primaryDark, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 }}>
-          Visão geral
-        </div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
-          Como está a dieta dos lotes?
-        </h1>
-        <div style={{ fontSize: 13.5, color: '#6b7568', marginTop: 4 }}>
-          Eficiência média {fmt(k.eficiencia_ponderada, 3)} · forragem {fmt(k.avg_forragem, 1)}% · CMS rebanho {fmt(k.ms_vaca_rebanho, 1)} kg
-        </div>
-      </div>
+      <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: -0.8, margin: 0, color: '#1a1f1a', textTransform: 'uppercase' }}>
+        Visão Geral
+      </h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         {kpis.map((kpi, i) => <KPICard key={i} kpi={kpi} A={A} />)}
