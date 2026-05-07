@@ -1,17 +1,31 @@
+import { useMemo } from 'react'
 import Card from '../ui/Card'
 import SectionHeader from '../ui/SectionHeader'
 import MultiLineChart from '../charts/MultiLineChart'
 import { fmt, fmtInt, monthName } from '../../utils/format'
 
 export default function MonthlyTab({ ctx, A }) {
-  const { lotes, colors, monthly } = ctx
+  const { lotes, colors, monthly, rows } = ctx
+
+  const allDates = useMemo(
+    () => [...new Set(rows.map(r => r.data_registro))].sort(),
+    [rows]
+  )
+
+  function makeSeries(field) {
+    return lotes.map(l => {
+      const dataMap = {}
+      rows.filter(r => r.lote === l).forEach(r => { dataMap[r.data_registro] = r[field] })
+      return { label: l, color: colors[l] || '#888', values: allDates.map(d => dataMap[d] ?? null) }
+    })
+  }
+
+  const efSeries    = useMemo(() => makeSeries('eficiencia_alimentar'), [lotes, rows, allDates])
+  const leiteSeries = useMemo(() => makeSeries('leite_por_vaca'),       [lotes, rows, allDates])
+  const cmsSeries   = useMemo(() => makeSeries('consumo_ms_vaca'),      [lotes, rows, allDates])
 
   const months = [...new Set(monthly.map(m => m.mes))].sort()
   const mNames = months.map(m => monthName(m))
-
-  const efSeries    = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.eficiencia_pond ?? 0) }))
-  const leiteSeries = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.leite_vaca_pond ?? 0) }))
-  const cmsSeries   = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.ms_vaca_pond ?? 0) }))
 
   const Legend = ({ series }) => (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, paddingTop: 8, borderTop: `1px dashed ${A.primaryLight}`, marginTop: 4 }}>
@@ -24,38 +38,30 @@ export default function MonthlyTab({ ctx, A }) {
     </div>
   )
 
-  const MonthAxis = () => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#9ca299', fontWeight: 600, marginTop: -18, padding: '0 36px 6px' }}>
-      {mNames.map(n => <span key={n}>{n}</span>)}
-    </div>
-  )
-
   return (
     <>
-      <SectionHeader A={A} eyebrow="Histórico" title="Evolução mensal" subtitle={`${mNames[0] || ''}–${mNames[mNames.length - 1] || ''} · ${months.length} meses · ${lotes.length} lotes`} />
+      <SectionHeader A={A} eyebrow="Histórico" />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Card A={A} eyebrow="Mensal · kg leite / kg MS" title="Eficiência alimentar">
-          <MultiLineChart series={efSeries} height={220} formatY={v => v.toFixed(2)} />
-          <MonthAxis />
+        <Card A={A} eyebrow="kg leite / kg MS · evolução diária" title="Eficiência alimentar">
+          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2)} />
           <Legend series={efSeries} />
         </Card>
-        <Card A={A} eyebrow="Mensal · kg/vaca/dia" title="Leite por vaca">
-          <MultiLineChart series={leiteSeries} height={220} formatY={v => v.toFixed(0)} />
-          <MonthAxis />
+        <Card A={A} eyebrow="kg/vaca/dia · evolução diária" title="Leite por vaca">
+          <MultiLineChart series={leiteSeries} dates={allDates} height={220} formatY={v => v.toFixed(0)} />
           <Legend series={leiteSeries} />
         </Card>
       </div>
 
-      <Card A={A} eyebrow="Mensal · kg MS/vaca/dia" title="CMS por vaca">
-        <MultiLineChart series={cmsSeries} height={240} formatY={v => v.toFixed(1)} />
-        <MonthAxis />
+      <Card A={A} eyebrow="kg MS/vaca/dia · evolução diária" title="CMS por vaca">
+        <MultiLineChart series={cmsSeries} dates={allDates} height={240} formatY={v => v.toFixed(1)} />
         <Legend series={cmsSeries} />
       </Card>
 
       <div style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', border: `1px solid ${A.primaryLight}` }}>
         <div style={{ padding: '14px 22px', borderBottom: `1px solid ${A.primaryLight}` }}>
           <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3 }}>Tabela mensal por lote</div>
+          <div style={{ fontSize: 12, color: '#6b7568', marginTop: 2 }}>{mNames[0] || ''}–{mNames[mNames.length - 1] || ''} · {months.length} meses · {lotes.length} lotes</div>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

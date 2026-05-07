@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import KPICard from '../ui/KPICard'
 import Card from '../ui/Card'
 import SectionHeader from '../ui/SectionHeader'
@@ -8,12 +9,24 @@ import { fmt, fmtInt } from '../../utils/format'
 export default function ProductionTab({ ctx, A }) {
   const { lotes, colors, batch, rows, rebanhoLeite, leiteTrend, k } = ctx
 
-  const series = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: rows.filter(r => r.lote === l).map(r => r.leite_por_vaca) }))
-  series.push({ label: 'Rebanho', color: '#1e3a5f', values: rebanhoLeite, thick: true, dashed: true })
+  const allDates = useMemo(
+    () => [...new Set(rows.map(r => r.data_registro))].sort(),
+    [rows]
+  )
+
+  const series = useMemo(() => {
+    const loteSeries = lotes.map(l => {
+      const dataMap = {}
+      rows.filter(r => r.lote === l).forEach(r => { dataMap[r.data_registro] = r.leite_por_vaca })
+      return { label: l, color: colors[l] || '#888', values: allDates.map(d => dataMap[d] ?? null) }
+    })
+    loteSeries.push({ label: 'Rebanho', color: '#1e3a5f', values: rebanhoLeite, thick: true, dashed: true })
+    return loteSeries
+  }, [lotes, rows, colors, allDates, rebanhoLeite])
 
   return (
     <>
-      <SectionHeader A={A} eyebrow="Produção" title="Quanto cada lote produz" subtitle="Leite por vaca e produção total no período" />
+      <SectionHeader A={A} eyebrow="Produção" />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
         <KPICard A={A} kpi={{ icon: 'drop',  label: 'Produção total',    value: fmtInt(k.total_producao),     unit: 'kg/dia',      color: A.primary, spark: rebanhoLeite, trendVal: leiteTrend }} />
@@ -21,8 +34,8 @@ export default function ProductionTab({ ctx, A }) {
         <KPICard A={A} kpi={{ icon: 'cow',   label: 'Vacas em lactação',  value: fmtInt(k.total_vacas),        unit: 'cabeças',     color: '#7c3aed', sub: `${lotes.length} lotes ativos` }} />
       </div>
 
-      <Card A={A} eyebrow="Evolução por lote" title="Leite por vaca · 30 dias">
-        <MultiLineChart series={series} height={280} formatY={v => v.toFixed(0)} />
+      <Card A={A} eyebrow="Evolução por lote" title="Leite por vaca · kg/vaca/dia">
+        <MultiLineChart series={series} dates={allDates} height={280} formatY={v => v.toFixed(0)} />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${A.primaryLight}` }}>
           {series.map(s => (
             <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#3a4438' }}>
@@ -33,7 +46,7 @@ export default function ProductionTab({ ctx, A }) {
         </div>
       </Card>
 
-      <Card A={A} eyebrow="Ranking" title="Ordenado por leite/vaca">
+      <Card A={A} eyebrow="Ranking" title="Leite/vaca ponderado por lote">
         <HBarChart
           items={[...batch].sort((a, b) => b.leite_vaca_pond - a.leite_vaca_pond).map(b => ({ label: b.lote, value: b.leite_vaca_pond, color: colors[b.lote] || '#888' }))}
           max={42}

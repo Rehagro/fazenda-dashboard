@@ -124,38 +124,40 @@ export default function DietTab({ ctx, A }) {
     return m
   }, [rows])
 
+  // Master dates array — all unique dates across all lotes
+  const allDates = useMemo(
+    () => [...new Set(rows.map(r => r.data_registro))].sort(),
+    [rows]
+  )
+
   // Datas comuns para dual-axis do lote selecionado
   const dualDates = useMemo(() => {
     if (!selectedLote || !byLote[selectedLote]) return []
     return byLote[selectedLote].map(r => r.data_registro)
   }, [selectedLote, byLote])
 
-  // CMS/vaca por lote (linha temporal)
-  const cmsSeries = lotes.map(l => ({
-    label: l,
-    color: colors[l],
-    values: rows.filter(r => r.lote === l)
-      .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
-      .map(r => r.consumo_ms_vaca),
-  }))
+  // CMS/vaca por lote — aligned to allDates
+  const cmsSeries = useMemo(() => lotes.map(l => {
+    const dataMap = {}
+    rows.filter(r => r.lote === l).forEach(r => { dataMap[r.data_registro] = r.consumo_ms_vaca })
+    return { label: l, color: colors[l], values: allDates.map(d => dataMap[d] ?? null) }
+  }), [lotes, rows, colors, allDates])
 
-  // Eficiência por lote
-  const efSeries = lotes.map(l => ({
-    label: l,
-    color: colors[l],
-    values: rows.filter(r => r.lote === l)
-      .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
-      .map(r => r.eficiencia_alimentar),
-  }))
+  // Eficiência por lote — aligned to allDates
+  const efSeries = useMemo(() => lotes.map(l => {
+    const dataMap = {}
+    rows.filter(r => r.lote === l).forEach(r => { dataMap[r.data_registro] = r.eficiencia_alimentar })
+    return { label: l, color: colors[l], values: allDates.map(d => dataMap[d] ?? null) }
+  }), [lotes, rows, colors, allDates])
 
-  // % Sobra por lote (com refLines de meta)
-  const sobraSeries = lotes
+  // % Sobra por lote (com refLines de meta) — aligned to allDates
+  const sobraSeries = useMemo(() => lotes
     .filter(l => byLote[l]?.some(r => r.pct_sobra != null))
-    .map(l => ({
-      label: l,
-      color: colors[l],
-      values: (byLote[l] || []).map(r => r.pct_sobra),
-    }))
+    .map(l => {
+      const dataMap = {}
+      ;(byLote[l] || []).forEach(r => { dataMap[r.data_registro] = r.pct_sobra })
+      return { label: l, color: colors[l], values: allDates.map(d => dataMap[d] ?? null) }
+    }), [lotes, byLote, colors, allDates])
 
   const sobraRefLines = Object.entries(metaSobraMap).map(([lote, meta]) => ({
     value: meta,
@@ -202,14 +204,14 @@ export default function DietTab({ ctx, A }) {
 
       {/* CMS/vaca por lote */}
       <Card A={A} eyebrow="Evolução diária por lote" title="CMS por vaca · kg MS/vaca/dia">
-        <MultiLineChart series={cmsSeries} height={300} formatY={v => v.toFixed(1)} />
+        <MultiLineChart series={cmsSeries} dates={allDates} height={300} formatY={v => v.toFixed(1)} />
         <Legend series={cmsSeries} />
       </Card>
 
       {/* Eficiência + % Forragem */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
         <Card A={A} eyebrow="Eficiência alimentar" title="kg leite / kg MS · evolução por lote">
-          <MultiLineChart series={efSeries} height={220} formatY={v => v.toFixed(2)} />
+          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2)} />
           <Legend series={efSeries} />
         </Card>
 
@@ -232,10 +234,10 @@ export default function DietTab({ ctx, A }) {
         <Card A={A} eyebrow="Sobra da dieta" title="% sobra por lote vs meta">
           <MultiLineChart
             series={sobraSeries}
+            dates={allDates}
             height={220}
             formatY={v => `${v.toFixed(1)}%`}
             refLines={sobraRefLines}
-            padding={{ top: 16, right: sobraRefLines.length ? 72 : 16, bottom: 28, left: 44 }}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12, paddingTop: 12, borderTop: '1px dashed #d4e8d4', alignItems: 'center' }}>
             {sobraSeries.map(s => (

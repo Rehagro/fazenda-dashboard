@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import KPICard from '../ui/KPICard'
 import Card from '../ui/Card'
 import PeriodToggle from '../ui/PeriodToggle'
@@ -60,11 +61,16 @@ function BatchTableFull({ batch, colors, A }) {
 export default function OverviewTab({ ctx, A }) {
   const { lotes, colors, k, batch, rows, rebanhoEf, efTrend } = ctx
 
-  const efSeries = lotes.map(l => ({
-    label: l,
-    color: colors[l],
-    values: rows.filter(r => r.lote === l).map(r => r.eficiencia_alimentar),
-  }))
+  const allDates = useMemo(
+    () => [...new Set(rows.map(r => r.data_registro))].sort(),
+    [rows]
+  )
+
+  const efSeries = useMemo(() => lotes.map(l => {
+    const dataMap = {}
+    rows.filter(r => r.lote === l).forEach(r => { dataMap[r.data_registro] = r.eficiencia_alimentar })
+    return { label: l, color: colors[l], values: allDates.map(d => dataMap[d] ?? null) }
+  }), [lotes, rows, colors, allDates])
 
   const kpis = [
     { icon: 'flask',  label: 'CMS por vaca',      value: fmt(k.ms_vaca_rebanho, 1),     unit: 'kg MS/vaca/dia', color: A.primary,  spark: rebanhoEf, sub: 'ponderado · rebanho' },
@@ -85,7 +91,7 @@ export default function OverviewTab({ ctx, A }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
         <Card A={A} eyebrow="Eficiência por lote" title="kg leite por kg MS · últimos 30 dias" right={<PeriodToggle A={A} />}>
-          <MultiLineChart series={efSeries} height={240} formatY={v => v.toFixed(2)} />
+          <MultiLineChart series={efSeries} dates={allDates} height={240} formatY={v => v.toFixed(2)} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${A.primaryLight}` }}>
             {efSeries.map(s => (
               <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#3a4438' }}>
