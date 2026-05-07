@@ -2,8 +2,8 @@ import KPICard from '../ui/KPICard'
 import Card from '../ui/Card'
 import SectionHeader from '../ui/SectionHeader'
 import HBarChart from '../charts/HBarChart'
-import ScatterChart from '../charts/ScatterChart'
-import { fmt } from '../../utils/format'
+import MultiLineChart from '../charts/MultiLineChart'
+import { fmt, fmtInt } from '../../utils/format'
 
 function BatchTableFull({ batch, colors, A }) {
   const effBg = (v) => v >= 1.5 ? '#dcf3e0' : v >= 1.3 ? '#fef3d4' : '#fde8e8'
@@ -18,7 +18,7 @@ function BatchTableFull({ batch, colors, A }) {
           <thead>
             <tr style={{ background: A.bg }}>
               {['Lote', 'Vacas', 'Leite/vaca', 'CMS/vaca', 'Eficiência', '% Forragem', '% MS dieta'].map((h, i) => (
-                <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: '#3a4438', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
+                <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: '#3a4438', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -33,7 +33,7 @@ function BatchTableFull({ batch, colors, A }) {
                     <span style={{ fontWeight: 700 }}>{row.lote}</span>
                   </div>
                 </td>
-                <td style={{ padding: '11px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.avg_vacas}</td>
+                <td style={{ padding: '11px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtInt(row.avg_vacas)}</td>
                 <td style={{ padding: '11px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{fmt(row.leite_vaca_pond, 1)}</td>
                 <td style={{ padding: '11px 16px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(row.ms_vaca_pond, 1)}</td>
                 <td style={{ padding: '11px 16px', textAlign: 'right' }}>
@@ -53,36 +53,69 @@ function BatchTableFull({ batch, colors, A }) {
 }
 
 export default function DietTab({ ctx, A }) {
-  const { colors, batch, rows, k } = ctx
+  const { lotes, colors, batch, rows, k } = ctx
 
-  const scatterPoints = batch.map(b => {
-    const lr = rows.filter(r => r.lote === b.lote)
-    const realAvg = lr.length ? lr.reduce((s, r) => s + r.ms_vaca, 0) / lr.length : 0
-    const prevAvg = lr.length ? lr.reduce((s, r) => s + (r.ms_vaca_previsto || r.ms_vaca), 0) / lr.length : 0
-    return { x: prevAvg, y: realAvg, label: b.lote, color: colors[b.lote] || '#888' }
-  })
+  // Série temporal de CMS/vaca por lote
+  const cmsSeries = lotes.map(l => ({
+    label: l,
+    color: colors[l],
+    values: rows.filter(r => r.lote === l).map(r => r.ms_vaca),
+  }))
+
+  // Série temporal de eficiência por lote
+  const efSeries = lotes.map(l => ({
+    label: l,
+    color: colors[l],
+    values: rows.filter(r => r.lote === l).map(r => r.eficiencia),
+  }))
+
+  const Legend = ({ series }) => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${A.primaryLight}` }}>
+      {series.map(s => (
+        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#3a4438' }}>
+          <span style={{ width: 14, height: 3, background: s.color, borderRadius: 2 }} />
+          {s.label}
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <>
-      <SectionHeader A={A} eyebrow="Dieta & CMS" title="Consumo de matéria seca e forragem" subtitle="Comparar previsto vs real, ranking de forragem e % MS" />
+      <SectionHeader A={A} eyebrow="Dieta & CMS" title="Consumo de matéria seca e forragem" subtitle="Evolução diária, ranking e composição da dieta por lote" />
 
+      {/* 4 KPI cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <KPICard A={A} kpi={{ icon: 'flask',  label: 'CMS/vaca',       value: fmt(k.ms_vaca_rebanho, 1),     unit: 'kg MS/vaca', color: A.primary,  sub: 'ponderado' }} />
-        <KPICard A={A} kpi={{ icon: 'leaf',   label: '% Forragem',     value: fmt(k.avg_forragem, 1),        unit: '%',          color: '#16a34a', sub: '50–60% saudável' }} />
-        <KPICard A={A} kpi={{ icon: 'wheat',  label: '% MS forragem',  value: fmt(k.avg_pct_ms_forragem, 1), unit: '%',          color: '#65a30d', sub: 'matéria seca' }} />
-        <KPICard A={A} kpi={{ icon: 'layers', label: '% MS dieta',     value: fmt(k.avg_pct_ms_dieta, 1),   unit: '%',          color: '#d97706', sub: 'matéria seca' }} />
+        <KPICard A={A} kpi={{ icon: 'flask',  label: 'CMS/vaca',      value: fmt(k.ms_vaca_rebanho, 1),     unit: 'kg MS/vaca', color: A.primary,  sub: 'ponderado' }} />
+        <KPICard A={A} kpi={{ icon: 'leaf',   label: '% Forragem',    value: fmt(k.avg_forragem, 1),        unit: '%',          color: '#16a34a', sub: '50–60% saudável' }} />
+        <KPICard A={A} kpi={{ icon: 'wheat',  label: '% MS forragem', value: fmt(k.avg_pct_ms_forragem, 1), unit: '%',          color: '#65a30d', sub: 'matéria seca' }} />
+        <KPICard A={A} kpi={{ icon: 'layers', label: '% MS dieta',    value: fmt(k.avg_pct_ms_dieta, 1),   unit: '%',          color: '#d97706', sub: 'matéria seca' }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Card A={A} eyebrow="Consistência" title="CMS previsto vs real" subtitle="linha pontilhada = previsto = real">
-          <ScatterChart points={scatterPoints} height={240} xLabel="CMS previsto (kg)" yLabel="CMS real (kg)" />
+      {/* Gráfico grande — CMS/vaca por lote ao longo do tempo */}
+      <Card A={A} eyebrow="Evolução diária por lote" title="CMS por vaca · kg MS/vaca/dia">
+        <MultiLineChart series={cmsSeries} height={300} formatY={v => v.toFixed(1)} />
+        <Legend series={cmsSeries} />
+      </Card>
+
+      {/* Eficiência + % Forragem lado a lado */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
+        <Card A={A} eyebrow="Eficiência alimentar" title="kg leite / kg MS · evolução por lote">
+          <MultiLineChart series={efSeries} height={220} formatY={v => v.toFixed(2)} />
+          <Legend series={efSeries} />
         </Card>
+
         <Card A={A} eyebrow="Ranking" title="% Forragem por lote">
           <HBarChart
-            items={[...batch].sort((a, b) => b.avg_forragem - a.avg_forragem).map(b => ({ label: b.lote, value: b.avg_forragem, color: colors[b.lote] || '#888' }))}
-            max={65}
+            items={[...batch].sort((a, b) => b.avg_forragem - a.avg_forragem).map(b => ({
+              label: b.lote, value: b.avg_forragem, color: colors[b.lote],
+            }))}
+            max={70}
             formatVal={v => `${v.toFixed(1)}%`}
           />
+          <div style={{ marginTop: 12, padding: 10, background: A.bg, borderRadius: 10, fontSize: 11.5, color: '#3a4438' }}>
+            Meta saudável: <strong>50–60%</strong> forragem na dieta
+          </div>
         </Card>
       </div>
 

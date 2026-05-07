@@ -14,8 +14,8 @@ import DataTab       from './components/tabs/DataTab'
 import HistoryTab    from './components/tabs/HistoryTab'
 import GuideTab      from './components/tabs/GuideTab'
 
-import { useProfile }   from './hooks/useProfile'
-import { ACCENT_MAP, LOTE_COLORS } from './theme/palette'
+import { ACCENT_MAP } from './theme/palette'
+import { getLoteColor } from './components/charts/chartUtils'
 import {
   fetchFazendas, fetchLotes, fetchDates,
   fetchKpis, fetchData, fetchBatchSum,
@@ -27,7 +27,6 @@ const A = ACCENT_MAP.green
 export default function App() {
   const [tab,        setTab]        = useState('overview')
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [profile,    setProfile]    = useProfile()
 
   // ── Meta ───────────────────────────────────────────────────────────────
   const [fazendas, setFazendas] = useState([])
@@ -148,10 +147,17 @@ export default function App() {
     return { rebanhoLeite, rebanhoEf, leiteTrend, efTrend }
   }, [filteredRows])
 
+  // ── Build colors from actual lotes (fallback palette for unknown lotes) ──
+  const activeLotes = filters.lotes.length ? filters.lotes : lotes
+  const colorsMap = useMemo(
+    () => Object.fromEntries(activeLotes.map((l, i) => [l, getLoteColor(l, i)])),
+    [activeLotes.join(',')]  // eslint-disable-line
+  )
+
   // ── Context object for all tabs ───────────────────────────────────────
   const ctx = {
-    lotes:       filters.lotes.length ? filters.lotes : lotes,
-    colors:      LOTE_COLORS,
+    lotes:       activeLotes,
+    colors:      colorsMap,
     k:           kpis || {},
     batch:       batchSum,
     rows:        filteredRows,
@@ -173,8 +179,6 @@ export default function App() {
           <Sidebar
             tab={tab}
             setTab={setTab}
-            profile={profile}
-            setProfile={setProfile}
             onUploadClick={() => setUploadOpen(true)}
             lotesCount={lotes.length}
             A={A}
@@ -192,7 +196,7 @@ export default function App() {
           />
         }
       >
-        {tab === 'overview'   && <OverviewTab   ctx={ctx} A={A} profile={profile} />}
+        {tab === 'overview'   && <OverviewTab   ctx={ctx} A={A} />}
         {tab === 'lotes'      && <LotesTab      ctx={ctx} A={A} />}
         {tab === 'production' && <ProductionTab ctx={ctx} A={A} />}
         {tab === 'diet'       && <DietTab       ctx={ctx} A={A} />}

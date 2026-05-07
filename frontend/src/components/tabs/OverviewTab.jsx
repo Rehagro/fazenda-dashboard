@@ -1,6 +1,5 @@
 import KPICard from '../ui/KPICard'
 import Card from '../ui/Card'
-import SectionHeader from '../ui/SectionHeader'
 import PeriodToggle from '../ui/PeriodToggle'
 import Icon from '../ui/Icon'
 import MultiLineChart from '../charts/MultiLineChart'
@@ -58,41 +57,33 @@ function BatchTableFull({ batch, colors, A }) {
   )
 }
 
-export default function OverviewTab({ ctx, A, profile }) {
-  const { lotes, colors, k, batch, rows, rebanhoLeite, rebanhoEf, efTrend, leiteTrend } = ctx
+export default function OverviewTab({ ctx, A }) {
+  const { lotes, colors, k, batch, rows, rebanhoEf, efTrend } = ctx
 
-  const series = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: rows.filter(r => r.lote === l).map(r => r.leite_vaca) }))
-  series.push({ label: 'Rebanho', color: '#1e3a5f', values: rebanhoLeite, thick: true, dashed: true })
-  const efSeries = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: rows.filter(r => r.lote === l).map(r => r.eficiencia) }))
+  const efSeries = lotes.map(l => ({
+    label: l,
+    color: colors[l],
+    values: rows.filter(r => r.lote === l).map(r => r.eficiencia),
+  }))
 
-  const gestor = profile === 'gestor'
-  const kpis = gestor ? [
-    { icon: 'drop',  label: 'Produção total',      value: fmtInt(k.total_producao),       unit: 'kg leite/dia',  color: A.primary,  spark: rebanhoLeite, trendVal: leiteTrend },
-    { icon: 'milk',  label: 'Leite por vaca',       value: fmt(k.leite_vaca_rebanho, 1),   unit: 'kg/vaca/dia',   color: '#0ea5e9',  spark: rebanhoLeite, trendVal: leiteTrend },
-    { icon: 'cow',   label: 'Vacas em lactação',    value: fmtInt(k.total_vacas),          unit: 'cabeças',       color: '#7c3aed',  sub: `${lotes.length} lotes ativos` },
-    { icon: 'bolt',  label: 'Eficiência alimentar', value: fmt(k.eficiencia_ponderada, 3), unit: 'kg leite/kg MS', color: '#d97706', spark: rebanhoEf,    trendVal: efTrend },
-  ] : [
-    { icon: 'flask',  label: 'CMS por vaca',      value: fmt(k.ms_vaca_rebanho, 1),       unit: 'kg MS/vaca/dia', color: A.primary, sub: 'ponderado · rebanho' },
-    { icon: 'leaf',   label: 'Forragem na dieta', value: fmt(k.avg_forragem, 1),           unit: '%',              color: '#16a34a', sub: 'meta: 50–60%' },
-    { icon: 'wheat',  label: '% MS forragem',     value: fmt(k.avg_pct_ms_forragem, 1),   unit: '%',              color: '#65a30d', sub: 'matéria seca' },
-    { icon: 'layers', label: '% MS dieta total',  value: fmt(k.avg_pct_ms_dieta, 1),      unit: '%',              color: '#d97706', sub: 'matéria seca' },
+  const kpis = [
+    { icon: 'flask',  label: 'CMS por vaca',      value: fmt(k.ms_vaca_rebanho, 1),     unit: 'kg MS/vaca/dia', color: A.primary,  spark: rebanhoEf, sub: 'ponderado · rebanho' },
+    { icon: 'leaf',   label: 'Forragem na dieta',  value: fmt(k.avg_forragem, 1),         unit: '%',             color: '#16a34a',  sub: 'meta: 50–60%' },
+    { icon: 'wheat',  label: '% MS forragem',      value: fmt(k.avg_pct_ms_forragem, 1), unit: '%',             color: '#65a30d',  sub: 'matéria seca' },
+    { icon: 'layers', label: '% MS dieta total',   value: fmt(k.avg_pct_ms_dieta, 1),    unit: '%',             color: '#d97706',  trendVal: efTrend, spark: rebanhoEf },
   ]
-
-  const subtitle = gestor
-    ? `${fmtInt(k.total_vacas)} vacas em lactação · ${lotes.length} lotes · semana ${(leiteTrend ?? 0) >= 0 ? 'em alta' : 'em queda'} vs anterior`
-    : `Eficiência média ${fmt(k.eficiencia_ponderada, 3)} · forragem ${fmt(k.avg_forragem, 1)}% · CMS rebanho ${fmt(k.ms_vaca_rebanho, 1)} kg`
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: A.primaryDark, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 }}>
-            {gestor ? 'Visão do gestor' : 'Visão do nutricionista'}
-          </div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
-            {gestor ? 'Como anda a produção?' : 'Como está a dieta dos lotes?'}
-          </h1>
-          <div style={{ fontSize: 13.5, color: '#6b7568', marginTop: 4 }}>{subtitle}</div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: A.primaryDark, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 }}>
+          Visão geral
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, margin: 0 }}>
+          Como está a dieta dos lotes?
+        </h1>
+        <div style={{ fontSize: 13.5, color: '#6b7568', marginTop: 4 }}>
+          Eficiência média {fmt(k.eficiencia_ponderada, 3)} · forragem {fmt(k.avg_forragem, 1)}% · CMS rebanho {fmt(k.ms_vaca_rebanho, 1)} kg
         </div>
       </div>
 
@@ -101,10 +92,10 @@ export default function OverviewTab({ ctx, A, profile }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
-        <Card A={A} eyebrow={gestor ? 'Produção por lote' : 'Eficiência por lote'} title={gestor ? 'Leite por vaca · últimos 30 dias' : 'kg leite por kg MS · últimos 30 dias'} right={<PeriodToggle A={A} />}>
-          <MultiLineChart series={gestor ? series : efSeries} height={240} formatY={v => v.toFixed(gestor ? 0 : 2)} />
+        <Card A={A} eyebrow="Eficiência por lote" title="kg leite por kg MS · últimos 30 dias" right={<PeriodToggle A={A} />}>
+          <MultiLineChart series={efSeries} height={240} formatY={v => v.toFixed(2)} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${A.primaryLight}` }}>
-            {(gestor ? series : efSeries).map(s => (
+            {efSeries.map(s => (
               <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#3a4438' }}>
                 <span style={{ width: 14, height: 3, background: s.color, borderRadius: 2 }} />
                 {s.label}
@@ -112,13 +103,14 @@ export default function OverviewTab({ ctx, A, profile }) {
             ))}
           </div>
         </Card>
-        <Card A={A} eyebrow="Ranking" title={gestor ? 'Leite/vaca por lote' : '% Forragem por lote'}>
+
+        <Card A={A} eyebrow="Ranking" title="% Forragem por lote">
           <HBarChart
-            items={[...batch].sort((a, b) => gestor ? b.leite_vaca_pond - a.leite_vaca_pond : b.avg_forragem - a.avg_forragem).map(b => ({
-              label: b.lote, value: gestor ? b.leite_vaca_pond : b.avg_forragem, color: colors[b.lote] || '#888',
+            items={[...batch].sort((a, b) => b.avg_forragem - a.avg_forragem).map(b => ({
+              label: b.lote, value: b.avg_forragem, color: colors[b.lote],
             }))}
-            max={gestor ? 42 : 65}
-            formatVal={v => gestor ? `${v.toFixed(1)} kg` : `${v.toFixed(1)}%`}
+            max={65}
+            formatVal={v => `${v.toFixed(1)}%`}
           />
           <div style={{ marginTop: 14, padding: 10, background: A.bg, borderRadius: 10, fontSize: 11.5, color: '#3a4438', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <Icon name="info" size={14} style={{ color: '#6b7568', flexShrink: 0, marginTop: 1 }} />
@@ -129,6 +121,7 @@ export default function OverviewTab({ ctx, A, profile }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16 }}>
         <BatchTableFull batch={batch} colors={colors} A={A} />
+
         {/* Composição rebanho */}
         <div style={{ background: '#fff', borderRadius: 18, padding: '20px 22px', border: `1px solid ${A.primaryLight}`, display: 'flex', flexDirection: 'column' }}>
           <div style={{ marginBottom: 12 }}>

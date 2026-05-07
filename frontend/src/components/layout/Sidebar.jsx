@@ -21,7 +21,7 @@ const NAV = [
   },
 ]
 
-export default function Sidebar({ tab, setTab, profile, setProfile, onUploadClick, lotesCount, A }) {
+export default function Sidebar({ tab, setTab, onUploadClick, lotesCount, A }) {
   return (
     <div style={{
       width: 236, flexShrink: 0,
@@ -31,31 +31,13 @@ export default function Sidebar({ tab, setTab, profile, setProfile, onUploadClic
       height: '100vh', overflow: 'hidden',
     }}>
       {/* Logo */}
-      <div style={{ padding: '20px 16px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ padding: '20px 16px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ width: 38, height: 38, borderRadius: 10, background: A.primary, color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
           <Icon name="cow" size={20} strokeWidth={1.8} />
         </div>
         <div>
           <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1f1a', letterSpacing: -0.3 }}>Fazenda</div>
           <div style={{ fontSize: 11, color: '#6b7568', fontWeight: 500 }}>Nutrição leiteira</div>
-        </div>
-      </div>
-
-      {/* Profile switcher */}
-      <div style={{ padding: '0 12px 14px' }}>
-        <div style={{ display: 'flex', background: A.bg, borderRadius: 10, padding: 3, gap: 3 }}>
-          {[['gestor', 'Gestor'], ['nutri', 'Nutricionista']].map(([id, label]) => (
-            <button key={id} onClick={() => setProfile(id)} style={{
-              flex: 1, padding: '6px 4px', border: 'none',
-              background: profile === id ? '#fff' : 'transparent',
-              color: profile === id ? A.primaryDark : '#6b7568',
-              fontWeight: profile === id ? 700 : 500,
-              fontSize: 11.5, borderRadius: 7, cursor: 'pointer',
-              fontFamily: 'inherit',
-              boxShadow: profile === id ? '0 1px 3px rgba(0,0,0,0.07)' : 'none',
-              transition: 'all 0.15s',
-            }}>{label}</button>
-          ))}
         </div>
       </div>
 
