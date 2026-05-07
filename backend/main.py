@@ -469,28 +469,49 @@ def list_uploads():
 
 @app.get("/api/template")
 def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
-    headers_list = [
+    col_keys = [
         "fazenda", "data", "lote", "num_vacas",
         "producao_leite_total", "leite_por_vaca",
         "consumo_ms_total", "consumo_ms_vaca",
         "percentual_forragem", "pct_ms_forragem", "pct_ms_dieta",
     ]
-    subtitles = [
-        "Nome da Fazenda", "AAAA-MM-DD", "Nome do Lote", "Nº de vacas",
-        "kg leite total", "kg leite/vaca/dia",
-        "kg MS total", "kg MS/vaca/dia",
-        "% forragem (0–100)", "% MS forragem (ex: 30.5)", "% MS dieta (ex: 45.0)",
+    col_labels = [
+        "Fazenda *", "Data *", "Lote *", "N Vacas *",
+        "Prod. Leite kg *", "Leite/Vaca kg *",
+        "CMS Total kg *", "CMS/Vaca kg *",
+        "% Forragem *", "% MS Forragem", "% MS Dieta",
     ]
+    col_hints = [
+        "Nome da fazenda", "DD/MM/AAAA ou AAAA-MM-DD", "Ex: TOP VACA, CB1...",
+        "Numero inteiro", "kg leite total do lote", "kg leite por vaca/dia",
+        "kg MS total do lote", "kg MS por vaca/dia",
+        "0 a 100 (ex: 52.5)", "Opcional (ex: 35.0)", "Opcional (ex: 47.0)",
+    ]
+    required = [True] * 9 + [False, False]
+
     examples = [
-        ["Fazenda Teste", "2026-01-01", "TOP VACA", 48, 1900, 39.6, 1248, 26.0, 50.0, 30.0, 44.5],
-        ["Fazenda Teste", "2026-01-01", "CB1",      60, 1980, 33.0, 1380, 23.0, 54.0, 31.5, 46.0],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP VACA",  142, 5453, 38.4, 3522, 24.8, 52.1, 38.2, 49.6],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP NOV",    98, 3205, 32.7, 2166, 22.1, 54.8, 36.9, 47.8],
+        ["Fazenda Sao Joao", "01/05/2026", "CB1",       165, 4653, 28.2, 3366, 20.4, 56.3, 35.4, 46.2],
+        ["Fazenda Sao Joao", "01/05/2026", "CB2",       134, 3296, 24.6, 2653, 19.8, 58.9, 34.1, 44.7],
+        ["Fazenda Sao Joao", "01/05/2026", "CB4",        89, 1762, 19.8, 1531, 17.2, 61.4, 32.8, 43.1],
+        ["Fazenda Sao Joao", "01/05/2026", "POS PARTO",  42, 1474, 35.1,  991, 23.6, 50.8, 39.1, 50.4],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP VACA",  142, 5481, 38.6, 3536, 24.9, 52.0, 38.1, 49.5],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP NOV",    98, 3224, 32.9, 2156, 22.0, 54.7, 36.8, 47.7],
+        ["Fazenda Sao Joao", "02/05/2026", "CB1",       165, 4686, 28.4, 3382, 20.5, 56.2, 35.3, 46.1],
+        ["Fazenda Sao Joao", "02/05/2026", "CB2",       134, 3243, 24.2, 2640, 19.7, 59.0, 34.0, 44.6],
+        ["Fazenda Sao Joao", "02/05/2026", "CB4",        89, 1744, 19.6, 1514, 17.0, 61.5, 32.7, 43.0],
+        ["Fazenda Sao Joao", "02/05/2026", "POS PARTO",  42, 1450, 34.5,  978, 23.3, 51.0, 39.0, 50.2],
     ]
 
     if fmt == "csv":
         import csv
         from io import StringIO
         buf = StringIO()
-        csv.writer(buf).writerows([headers_list] + examples)
+        w = csv.writer(buf)
+        w.writerow(col_keys)
+        for ex in examples:
+            w.writerow(ex)
         buf.seek(0)
         return StreamingResponse(
             iter([buf.getvalue().encode("utf-8-sig")]),
@@ -499,25 +520,170 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         )
 
     import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
     wb = openpyxl.Workbook()
+
+    # ── Sheet 1: Dados ──────────────────────────────────────────────────────
     ws = wb.active
-    ws.title = "Nutrição"
-    green = PatternFill("solid", fgColor="1A6B3A")
-    gray  = PatternFill("solid", fgColor="F3F4F6")
-    for ci, (h, s) in enumerate(zip(headers_list, subtitles), 1):
-        c = ws.cell(row=1, column=ci, value=h)
-        c.font = Font(bold=True, color="FFFFFF"); c.fill = green
-        c.alignment = Alignment(horizontal="center")
-        sub = ws.cell(row=2, column=ci, value=s)
-        sub.font = Font(italic=True, color="555555", size=9); sub.fill = gray
-    for ri, row in enumerate(examples, 3):
-        for ci, val in enumerate(row, 1):
-            ws.cell(row=ri, column=ci, value=val)
-    for col in ws.columns:
-        ws.column_dimensions[col[0].column_letter].width = 24
+    ws.title = "Dados"
+    n_cols = len(col_keys)
+    last_col = get_column_letter(n_cols)
+
+    def fill(hex_color):
+        return PatternFill("solid", fgColor=hex_color)
+
+    def border():
+        t = Side(style="thin", color="CCCCCC")
+        return Border(left=t, right=t, top=t, bottom=t)
+
+    def font(bold=False, italic=False, size=10, color="1A1F1A"):
+        return Font(bold=bold, italic=italic, size=size, color=color, name="Calibri")
+
+    def align(h="left", v="center", wrap=False):
+        return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
+
+    # Row 1 — title banner
+    ws.merge_cells(f"A1:{last_col}1")
+    c = ws["A1"]
+    c.value = "Planilha de Importacao — Dashboard Fazenda"
+    c.font = font(bold=True, size=14, color="FFFFFF")
+    c.fill = fill("1A6B3A")
+    c.alignment = align("center")
+    ws.row_dimensions[1].height = 30
+
+    # Row 2 — instruction note
+    ws.merge_cells(f"A2:{last_col}2")
+    c = ws["A2"]
+    c.value = ("Preencha a partir da linha 6. Colunas com * sao obrigatorias. "
+               "As linhas 6 a 17 sao apenas exemplos — apague-as antes de enviar.")
+    c.font = font(italic=True, size=10, color="2F6B3D")
+    c.fill = fill("E8F2EA")
+    c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
+    ws.row_dimensions[2].height = 22
+
+    # Row 3 — friendly column labels (green = required, gray = optional)
+    for ci, (label, req) in enumerate(zip(col_labels, required), 1):
+        c = ws.cell(row=3, column=ci, value=label)
+        c.font = font(bold=True, size=10, color="FFFFFF")
+        c.fill = fill("1A6B3A") if req else fill("6B7568")
+        c.alignment = align("center", wrap=True)
+        c.border = border()
+    ws.row_dimensions[3].height = 32
+
+    # Row 4 — technical key names (small, for reference)
+    for ci, key in enumerate(col_keys, 1):
+        c = ws.cell(row=4, column=ci, value=key)
+        c.font = font(italic=True, size=8, color="555555")
+        c.fill = fill("E8F2EA")
+        c.alignment = align("center", wrap=True)
+        c.border = border()
+    ws.row_dimensions[4].height = 16
+
+    # Row 5 — per-column hints
+    for ci, hint in enumerate(col_hints, 1):
+        c = ws.cell(row=5, column=ci, value=hint)
+        c.font = font(italic=True, size=9, color="3A4438")
+        c.fill = fill("F0F7F1")
+        c.alignment = align("center", wrap=True)
+        c.border = border()
+    ws.row_dimensions[5].height = 34
+
+    # Rows 6–17 — example data (yellow background)
+    for ri, row_data in enumerate(examples, 6):
+        for ci, val in enumerate(row_data, 1):
+            c = ws.cell(row=ri, column=ci, value=val)
+            c.fill = fill("FFFDE7")
+            c.border = border()
+            c.font = font(bold=(ci == 3), size=10)
+            c.alignment = align("left" if ci <= 3 else "right")
+        ws.row_dimensions[ri].height = 18
+
+    # Rows 18–47 — empty input rows (very light green)
+    for ri in range(18, 48):
+        for ci in range(1, n_cols + 1):
+            c = ws.cell(row=ri, column=ci)
+            c.fill = fill("FAFFF9")
+            c.border = border()
+            c.alignment = align("left" if ci <= 3 else "right")
+        ws.row_dimensions[ri].height = 18
+
+    # Column widths
+    for ci, w in enumerate([22, 16, 14, 10, 18, 16, 14, 14, 14, 16, 14], 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    # Freeze panes so header rows stay visible while scrolling
+    ws.freeze_panes = "A6"
+
+    # ── Sheet 2: Instrucoes ─────────────────────────────────────────────────
+    wi = wb.create_sheet("Instrucoes")
+    wi.column_dimensions["A"].width = 26
+    wi.column_dimensions["B"].width = 70
+
+    def wi_header(ri, text, bg):
+        wi.merge_cells(f"A{ri}:B{ri}")
+        c = wi.cell(row=ri, column=1, value=text)
+        c.font = font(bold=True, size=11, color="FFFFFF")
+        c.fill = fill(bg)
+        c.alignment = align("left", wrap=True)
+        wi.row_dimensions[ri].height = 22
+
+    def wi_row(ri, label, desc, bg_a, bg_b=None):
+        ca = wi.cell(row=ri, column=1, value=label)
+        ca.font = font(bold=bool(desc is None), size=10)
+        ca.fill = fill(bg_a)
+        ca.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        if desc is not None:
+            cb = wi.cell(row=ri, column=2, value=desc)
+            cb.font = font(size=10)
+            cb.fill = fill(bg_b or bg_a)
+            cb.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        wi.row_dimensions[ri].height = 20
+
+    r = 1
+    wi_header(r, "GUIA DE PREENCHIMENTO — Dashboard Fazenda", "1A6B3A"); r += 1
+    wi.row_dimensions[r].height = 6; r += 1
+
+    wi_header(r, "CAMPOS OBRIGATORIOS  (marcados com *)", "1A6B3A"); r += 1
+    for label, desc in [
+        ("fazenda",               "Nome da fazenda. Use exatamente o mesmo nome em todos os registros."),
+        ("data",                  "Data do registro. Formatos aceitos: DD/MM/AAAA (ex: 01/05/2026) ou AAAA-MM-DD (ex: 2026-05-01)."),
+        ("lote",                  "Nome do lote. Exemplos comuns: TOP VACA, TOP NOV, CB1, CB2, CB4, POS PARTO. Use o mesmo nome consistentemente."),
+        ("num_vacas",             "Numero total de vacas no lote nessa data. Deve ser um numero inteiro (ex: 142)."),
+        ("producao_leite_total",  "Producao total de leite do lote no dia em kg (ex: 5453). E o total do lote, nao por vaca."),
+        ("leite_por_vaca",        "Producao de leite por vaca no dia em kg (ex: 38.4). Normalmente = producao_leite_total / num_vacas."),
+        ("consumo_ms_total",      "Consumo total de materia seca do lote no dia em kg (ex: 3522)."),
+        ("consumo_ms_vaca",       "Consumo de materia seca por vaca por dia em kg (ex: 24.8). Normalmente = consumo_ms_total / num_vacas."),
+        ("percentual_forragem",   "Percentual de forragem na dieta, de 0 a 100 (ex: 52.5). Meta saudavel: entre 50% e 60%."),
+    ]:
+        wi_row(r, label, desc, "E8F2EA"); r += 1
+
+    wi.row_dimensions[r].height = 6; r += 1
+    wi_header(r, "CAMPOS OPCIONAIS  (podem ficar em branco)", "6B7568"); r += 1
+    for label, desc in [
+        ("pct_ms_forragem", "Percentual de materia seca da fracao forragem (ex: 35.0). Deixe em branco se nao tiver."),
+        ("pct_ms_dieta",    "Percentual de materia seca da dieta total (ex: 47.0). Deixe em branco se nao tiver."),
+    ]:
+        wi_row(r, label, desc, "F3F4F6"); r += 1
+
+    wi.row_dimensions[r].height = 6; r += 1
+    wi_header(r, "DICAS E ERROS COMUNS", "D97706"); r += 1
+    for tip in [
+        ("CORRETO",  "Cada linha representa um lote em um dia especifico."),
+        ("CORRETO",  "Use ponto (.) como separador decimal, nao virgula."),
+        ("CORRETO",  "Apague as linhas de exemplo (6 a 17) antes de enviar."),
+        ("CORRETO",  "O sistema aceita arquivos .xlsx e .csv."),
+        ("ATENCAO",  "Nao altere os nomes das colunas na planilha."),
+        ("ATENCAO",  "Nao deixe celulas em branco nas colunas obrigatorias."),
+        ("ATENCAO",  "Nao use formulas nas celulas — apenas valores numericos."),
+    ]:
+        bg = "FFFDE7" if tip[0] == "CORRETO" else "FDECEA"
+        wi_row(r, tip[0], tip[1], bg); r += 1
+
     buf = io.BytesIO()
-    wb.save(buf); buf.seek(0)
+    wb.save(buf)
+    buf.seek(0)
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=template_fazenda.xlsx"})
