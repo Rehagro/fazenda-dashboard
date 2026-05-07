@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from database import (
     get_connection, init_db, seed_data,
@@ -18,7 +19,7 @@ from database import (
     USE_POSTGRES,
 )
 
-app = FastAPI(title="Fazenda Nutrition Dashboard API", version="2.0.0")
+app = FastAPI(title="Fazenda Nutrition Dashboard API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,6 +145,60 @@ def get_dates(fazenda: Optional[str] = Query(None)):
 
 
 # ──────────────────────────────────────────────
+# Configurações — Meta de sobra
+# ──────────────────────────────────────────────
+
+class MetaSobraIn(BaseModel):
+    fazenda: str
+    lote: str
+    meta_pct: float
+
+
+@app.get("/api/config/meta-sobra")
+def get_meta_sobra(fazenda: Optional[str] = Query(None)):
+    conn = get_connection()
+    if fazenda:
+        rows = db_exec(conn,
+            "SELECT fazenda, lote, meta_pct FROM meta_sobra WHERE fazenda = ? ORDER BY lote",
+            [fazenda],
+        ).fetchall()
+    else:
+        rows = db_exec(conn,
+            "SELECT fazenda, lote, meta_pct FROM meta_sobra ORDER BY fazenda, lote"
+        ).fetchall()
+    conn.close()
+    return {"data": [dict(r) for r in rows]}
+
+
+@app.post("/api/config/meta-sobra")
+def upsert_meta_sobra(body: MetaSobraIn):
+    conn = get_connection()
+    if USE_POSTGRES:
+        db_exec(conn,
+            """INSERT INTO meta_sobra (fazenda, lote, meta_pct) VALUES (?, ?, ?)
+               ON CONFLICT (fazenda, lote) DO UPDATE SET meta_pct = EXCLUDED.meta_pct""",
+            [body.fazenda, body.lote, body.meta_pct],
+        )
+    else:
+        db_exec(conn,
+            "INSERT OR REPLACE INTO meta_sobra (fazenda, lote, meta_pct) VALUES (?, ?, ?)",
+            [body.fazenda, body.lote, body.meta_pct],
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.delete("/api/config/meta-sobra")
+def delete_meta_sobra(fazenda: str = Query(...), lote: str = Query(...)):
+    conn = get_connection()
+    db_exec(conn, "DELETE FROM meta_sobra WHERE fazenda = ? AND lote = ?", [fazenda, lote])
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────
 # Dashboard data
 # ──────────────────────────────────────────────
 
@@ -161,7 +216,8 @@ def dashboard_data(
                    producao_leite_total, leite_por_vaca,
                    consumo_ms_total, consumo_ms_vaca,
                    percentual_forragem, eficiencia_alimentar,
-                   pct_ms_forragem, pct_ms_dieta
+                   pct_ms_forragem, pct_ms_dieta,
+                   qtd_dieta_fornecida, qtd_sobra_dieta, pct_sobra
             FROM producao_rebanho
             {where}
             ORDER BY data_registro, lote""",
@@ -192,9 +248,10 @@ def dashboard_kpis(
         conn.close()
         return {
             "total_producao": 0, "total_vacas": 0,
-            "eficiencia_ponderada": 0, "avg_forragem": 0,
-            "leite_vaca_rebanho": 0, "ms_vaca_rebanho": 0,
+            "eficiencia_ponderada": None, "avg_forragem": None,
+            "leite_vaca_rebanho": None, "ms_vaca_rebanho": None,
             "avg_pct_ms_forragem": None, "avg_pct_ms_dieta": None,
+            "avg_pct_sobra": None,
         }
 
     where2, params2 = _build_where(last_date, last_date, lotes, fazenda)
@@ -209,30 +266,72 @@ def dashboard_kpis(
                                                                                       AS pct_ms_forr_pond,
                SUM(pct_ms_dieta * num_vacas) /
                    NULLIF(SUM(CASE WHEN pct_ms_dieta IS NOT NULL THEN num_vacas ELSE 0 END), 0)
-                                                                                      AS pct_ms_dieta_pond
+                                                                                      AS pct_ms_dieta_pond,
+               AVG(pct_sobra)                                                         AS avg_pct_sobra
             FROM producao_rebanho {where2}""",
         params2,
     ).fetchone()
     conn.close()
 
-    total_prod  = totals["total_prod"]  or 0
-    total_ms    = totals["total_ms"]    or 1
-    total_vacas = totals["total_vacas"] or 0
-    avg_forr    = totals["avg_forr"]    or 0
-    pf          = totals["pct_ms_forr_pond"]
-    pd_         = totals["pct_ms_dieta_pond"]
+    def _f(v):
+        return float(v) if v is not None else None
+
+    total_prod  = _f(totals["total_prod"])  or 0
+    total_ms    = _f(totals["total_ms"])
+    total_vacas = int(totals["total_vacas"] or 0)
+    avg_forr    = _f(totals["avg_forr"])
+    pf          = _f(totals["pct_ms_forr_pond"])
+    pd_         = _f(totals["pct_ms_dieta_pond"])
+    avg_sobra   = _f(totals["avg_pct_sobra"])
 
     return {
-        "total_producao":       round(float(total_prod), 1),
-        "total_vacas":          int(total_vacas),
-        "eficiencia_ponderada": round(float(total_prod) / float(total_ms), 4) if total_ms else 0,
-        "avg_forragem":         round(float(avg_forr), 1),
-        "leite_vaca_rebanho":   round(float(total_prod) / float(total_vacas), 2) if total_vacas else 0,
-        "ms_vaca_rebanho":      round(float(total_ms) / float(total_vacas), 2)   if total_vacas else 0,
-        "avg_pct_ms_forragem":  round(float(pf), 1)  if pf  is not None else None,
-        "avg_pct_ms_dieta":     round(float(pd_), 1) if pd_ is not None else None,
+        "total_producao":       round(total_prod, 1),
+        "total_vacas":          total_vacas,
+        "eficiencia_ponderada": round(total_prod / total_ms, 4) if total_ms else None,
+        "avg_forragem":         round(avg_forr, 1) if avg_forr is not None else None,
+        "leite_vaca_rebanho":   round(total_prod / total_vacas, 2) if total_vacas else None,
+        "ms_vaca_rebanho":      round(total_ms / total_vacas, 2) if total_ms and total_vacas else None,
+        "avg_pct_ms_forragem":  round(pf, 1)  if pf  is not None else None,
+        "avg_pct_ms_dieta":     round(pd_, 1) if pd_ is not None else None,
+        "avg_pct_sobra":        round(avg_sobra, 1) if avg_sobra is not None else None,
         "ultima_data":          last_date,
     }
+
+
+def _batch_sql_pg(where):
+    return f"""SELECT
+           lote,
+           ROUND(AVG(num_vacas)::numeric, 1)                                                     AS avg_vacas,
+           ROUND((SUM(producao_leite_total)/NULLIF(SUM(num_vacas),0))::numeric, 2)               AS leite_vaca_pond,
+           ROUND((SUM(consumo_ms_total)/NULLIF(SUM(num_vacas),0))::numeric, 2)                   AS ms_vaca_pond,
+           ROUND((SUM(producao_leite_total)/NULLIF(SUM(consumo_ms_total),0))::numeric, 4)        AS eficiencia_pond,
+           ROUND(AVG(percentual_forragem)::numeric, 1)                                           AS avg_forragem,
+           ROUND(AVG(pct_ms_forragem)::numeric, 1)                                               AS avg_pct_ms_forragem,
+           ROUND(AVG(pct_ms_dieta)::numeric, 1)                                                  AS avg_pct_ms_dieta,
+           ROUND(AVG(pct_sobra)::numeric, 2)                                                     AS avg_pct_sobra,
+           COUNT(*)                                                                               AS num_registros
+        FROM producao_rebanho
+        {where}
+        GROUP BY lote
+        ORDER BY eficiencia_pond DESC NULLS LAST"""
+
+
+def _batch_sql_sq(where):
+    return f"""SELECT
+           lote,
+           ROUND(AVG(num_vacas), 1)                                                              AS avg_vacas,
+           ROUND(SUM(producao_leite_total)/NULLIF(SUM(num_vacas),0), 2)                          AS leite_vaca_pond,
+           ROUND(SUM(consumo_ms_total)/NULLIF(SUM(num_vacas),0), 2)                              AS ms_vaca_pond,
+           ROUND(SUM(producao_leite_total)/NULLIF(SUM(consumo_ms_total),0), 4)                   AS eficiencia_pond,
+           ROUND(AVG(percentual_forragem), 1)                                                    AS avg_forragem,
+           ROUND(AVG(pct_ms_forragem), 1)                                                        AS avg_pct_ms_forragem,
+           ROUND(AVG(pct_ms_dieta), 1)                                                           AS avg_pct_ms_dieta,
+           ROUND(AVG(pct_sobra), 2)                                                              AS avg_pct_sobra,
+           COUNT(*)                                                                               AS num_registros
+        FROM producao_rebanho
+        {where}
+        GROUP BY lote
+        ORDER BY eficiencia_pond DESC"""
 
 
 @app.get("/api/dashboard/batch-summary")
@@ -244,39 +343,8 @@ def batch_summary(
 ):
     where, params = _build_where(data_inicio, data_fim, lotes, fazenda)
     conn = get_connection()
-    rows = db_exec(conn,
-        f"""SELECT
-               lote,
-               ROUND(AVG(num_vacas)::numeric, 1)                                   AS avg_vacas,
-               ROUND((SUM(producao_leite_total)/SUM(num_vacas))::numeric, 2)        AS leite_vaca_pond,
-               ROUND((SUM(consumo_ms_total)/SUM(num_vacas))::numeric, 2)            AS ms_vaca_pond,
-               ROUND((SUM(producao_leite_total)/SUM(consumo_ms_total))::numeric, 4) AS eficiencia_pond,
-               ROUND(AVG(percentual_forragem)::numeric, 1)                          AS avg_forragem,
-               ROUND(AVG(pct_ms_forragem)::numeric, 1)                              AS avg_pct_ms_forragem,
-               ROUND(AVG(pct_ms_dieta)::numeric, 1)                                 AS avg_pct_ms_dieta,
-               COUNT(*)                                                              AS num_registros
-            FROM producao_rebanho
-            {where}
-            GROUP BY lote
-            ORDER BY eficiencia_pond DESC""",
-        params,
-    ).fetchall() if USE_POSTGRES else db_exec(conn,
-        f"""SELECT
-               lote,
-               ROUND(AVG(num_vacas), 1)                                             AS avg_vacas,
-               ROUND(SUM(producao_leite_total)/SUM(num_vacas), 2)                   AS leite_vaca_pond,
-               ROUND(SUM(consumo_ms_total)/SUM(num_vacas), 2)                       AS ms_vaca_pond,
-               ROUND(SUM(producao_leite_total)/SUM(consumo_ms_total), 4)            AS eficiencia_pond,
-               ROUND(AVG(percentual_forragem), 1)                                   AS avg_forragem,
-               ROUND(AVG(pct_ms_forragem), 1)                                       AS avg_pct_ms_forragem,
-               ROUND(AVG(pct_ms_dieta), 1)                                          AS avg_pct_ms_dieta,
-               COUNT(*)                                                              AS num_registros
-            FROM producao_rebanho
-            {where}
-            GROUP BY lote
-            ORDER BY eficiencia_pond DESC""",
-        params,
-    ).fetchall()
+    sql = _batch_sql_pg(where) if USE_POSTGRES else _batch_sql_sq(where)
+    rows = db_exec(conn, sql, params).fetchall()
     conn.close()
     return {"data": [dict(r) for r in rows]}
 
@@ -291,32 +359,36 @@ def dashboard_monthly(
     where, params = _build_where(data_inicio, data_fim, lotes, fazenda)
     mes = month_expr("data_registro")
     conn = get_connection()
-    sql = f"""SELECT
-               {mes}                                                                  AS mes,
+    if USE_POSTGRES:
+        sql = f"""SELECT
+               {mes}                                                                              AS mes,
                lote,
-               ROUND(AVG(num_vacas)::numeric, 1)                                     AS avg_vacas,
-               ROUND((SUM(producao_leite_total)/SUM(num_vacas))::numeric, 2)          AS leite_vaca_pond,
-               ROUND((SUM(consumo_ms_total)/SUM(num_vacas))::numeric, 2)              AS ms_vaca_pond,
-               ROUND((SUM(producao_leite_total)/SUM(consumo_ms_total))::numeric, 4)   AS eficiencia_pond,
-               ROUND(AVG(percentual_forragem)::numeric, 1)                            AS avg_forragem,
-               ROUND(AVG(pct_ms_forragem)::numeric, 1)                                AS avg_pct_ms_forragem,
-               ROUND(AVG(pct_ms_dieta)::numeric, 1)                                   AS avg_pct_ms_dieta,
-               COUNT(*)                                                                AS num_registros
+               ROUND(AVG(num_vacas)::numeric, 1)                                                 AS avg_vacas,
+               ROUND((SUM(producao_leite_total)/NULLIF(SUM(num_vacas),0))::numeric, 2)           AS leite_vaca_pond,
+               ROUND((SUM(consumo_ms_total)/NULLIF(SUM(num_vacas),0))::numeric, 2)               AS ms_vaca_pond,
+               ROUND((SUM(producao_leite_total)/NULLIF(SUM(consumo_ms_total),0))::numeric, 4)    AS eficiencia_pond,
+               ROUND(AVG(percentual_forragem)::numeric, 1)                                       AS avg_forragem,
+               ROUND(AVG(pct_ms_forragem)::numeric, 1)                                           AS avg_pct_ms_forragem,
+               ROUND(AVG(pct_ms_dieta)::numeric, 1)                                              AS avg_pct_ms_dieta,
+               ROUND(AVG(pct_sobra)::numeric, 2)                                                 AS avg_pct_sobra,
+               COUNT(*)                                                                           AS num_registros
             FROM producao_rebanho
             {where}
             GROUP BY {mes}, lote
-            ORDER BY {mes}, lote""" if USE_POSTGRES else \
-        f"""SELECT
-               {mes}                                                                  AS mes,
+            ORDER BY {mes}, lote"""
+    else:
+        sql = f"""SELECT
+               {mes}                                                                              AS mes,
                lote,
-               ROUND(AVG(num_vacas), 1)                                              AS avg_vacas,
-               ROUND(SUM(producao_leite_total)/SUM(num_vacas), 2)                    AS leite_vaca_pond,
-               ROUND(SUM(consumo_ms_total)/SUM(num_vacas), 2)                        AS ms_vaca_pond,
-               ROUND(SUM(producao_leite_total)/SUM(consumo_ms_total), 4)             AS eficiencia_pond,
-               ROUND(AVG(percentual_forragem), 1)                                    AS avg_forragem,
-               ROUND(AVG(pct_ms_forragem), 1)                                        AS avg_pct_ms_forragem,
-               ROUND(AVG(pct_ms_dieta), 1)                                           AS avg_pct_ms_dieta,
-               COUNT(*)                                                               AS num_registros
+               ROUND(AVG(num_vacas), 1)                                                          AS avg_vacas,
+               ROUND(SUM(producao_leite_total)/NULLIF(SUM(num_vacas),0), 2)                      AS leite_vaca_pond,
+               ROUND(SUM(consumo_ms_total)/NULLIF(SUM(num_vacas),0), 2)                          AS ms_vaca_pond,
+               ROUND(SUM(producao_leite_total)/NULLIF(SUM(consumo_ms_total),0), 4)               AS eficiencia_pond,
+               ROUND(AVG(percentual_forragem), 1)                                                AS avg_forragem,
+               ROUND(AVG(pct_ms_forragem), 1)                                                    AS avg_pct_ms_forragem,
+               ROUND(AVG(pct_ms_dieta), 1)                                                       AS avg_pct_ms_dieta,
+               ROUND(AVG(pct_sobra), 2)                                                          AS avg_pct_sobra,
+               COUNT(*)                                                                           AS num_registros
             FROM producao_rebanho
             {where}
             GROUP BY {mes}, lote
@@ -342,6 +414,7 @@ def dashboard_raw(
                pr.consumo_ms_total, pr.consumo_ms_vaca,
                pr.percentual_forragem, pr.eficiencia_alimentar,
                pr.pct_ms_forragem, pr.pct_ms_dieta,
+               pr.qtd_dieta_fornecida, pr.qtd_sobra_dieta, pr.pct_sobra,
                pr.created_at,
                u.filename AS upload_filename
             FROM producao_rebanho pr
@@ -358,13 +431,27 @@ def dashboard_raw(
 # Upload
 # ──────────────────────────────────────────────
 
-REQUIRED_COLS = {
-    "fazenda", "data", "lote", "num_vacas",
+# Apenas os 4 identificadores são obrigatórios — o resto é opcional
+REQUIRED_COLS = {"fazenda", "data", "lote", "num_vacas"}
+
+# Colunas opcionais reconhecidas
+OPTIONAL_COLS = {
     "producao_leite_total", "leite_por_vaca",
-    "consumo_ms_total", "consumo_ms_vaca",
-    "percentual_forragem",
+    "qtd_dieta_fornecida", "pct_ms_dieta", "qtd_sobra_dieta",
+    "percentual_forragem", "pct_ms_forragem",
 }
-OPTIONAL_COLS = {"pct_ms_forragem", "pct_ms_dieta"}
+
+
+def _nullable(val) -> Optional[float]:
+    if val is None:
+        return None
+    try:
+        import math
+        if math.isnan(float(val)):
+            return None
+        return float(val)
+    except (TypeError, ValueError):
+        return None
 
 
 @app.post("/api/upload")
@@ -387,28 +474,84 @@ async def upload_excel(file: UploadFile = File(...)):
         raise HTTPException(400, f"Erro ao ler arquivo: {e}")
 
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+    # Aceita num_cabecas como alias de num_vacas
+    if "num_cabecas" in df.columns and "num_vacas" not in df.columns:
+        df.rename(columns={"num_cabecas": "num_vacas"}, inplace=True)
+
     missing = REQUIRED_COLS - set(df.columns)
     if missing:
         raise HTTPException(400,
             f"Colunas obrigatórias ausentes: {', '.join(sorted(missing))}. "
             "Baixe o template para ver o formato correto.")
 
-    # remove linhas de descrição do template (ex: "AAAA-MM-DD", "Nome da Fazenda")
+    # Remover linhas sem data válida (ex: linha de descrição do template)
     df = df[pd.to_datetime(df["data"], errors="coerce").notna()].copy()
     if df.empty:
-        raise HTTPException(400, "Nenhuma linha com data válida encontrada. Verifique o formato da coluna 'data' (DD/MM/AAAA ou AAAA-MM-DD).")
+        raise HTTPException(400,
+            "Nenhuma linha com data válida encontrada. "
+            "Verifique o formato da coluna 'data' (DD/MM/AAAA ou AAAA-MM-DD).")
 
-    try:
-        df["data"] = pd.to_datetime(df["data"], dayfirst=True).dt.date
-        df["eficiencia_alimentar"] = (df["leite_por_vaca"] / df["consumo_ms_vaca"]).round(4)
-    except Exception as e:
-        raise HTTPException(400, f"Erro ao processar dados: {e}")
+    df["data"] = pd.to_datetime(df["data"], dayfirst=True).dt.date
+    df["num_vacas"] = pd.to_numeric(df["num_vacas"], errors="coerce").fillna(0).astype(int)
+
+    # Garantir que colunas opcionais existam como NaN
     for col in OPTIONAL_COLS:
         if col not in df.columns:
-            df[col] = None
+            df[col] = float("nan")
+        else:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # ── Derivar leite ─────────────────────────────────────────────────────
+    has_total = df["producao_leite_total"].notna()
+    has_avg   = df["leite_por_vaca"].notna()
+    nv        = df["num_vacas"].replace(0, float("nan"))
+
+    mask_t = has_total & ~has_avg
+    mask_a = ~has_total & has_avg
+    df.loc[mask_t, "leite_por_vaca"]        = (df.loc[mask_t, "producao_leite_total"] / nv.loc[mask_t]).round(4)
+    df.loc[mask_a, "producao_leite_total"]  = (df.loc[mask_a, "leite_por_vaca"] * df.loc[mask_a, "num_vacas"]).round(1)
+
+    # ── Derivar CMS ───────────────────────────────────────────────────────
+    df["consumo_ms_total"] = float("nan")
+    df["consumo_ms_vaca"]  = float("nan")
+
+    mask_cms = (
+        df["qtd_dieta_fornecida"].notna() &
+        df["qtd_sobra_dieta"].notna() &
+        df["pct_ms_dieta"].notna() &
+        (df["num_vacas"] > 0)
+    )
+    if mask_cms.any():
+        consumido = df.loc[mask_cms, "qtd_dieta_fornecida"] - df.loc[mask_cms, "qtd_sobra_dieta"]
+        df.loc[mask_cms, "consumo_ms_total"] = (consumido * df.loc[mask_cms, "pct_ms_dieta"] / 100).round(2)
+        df.loc[mask_cms, "consumo_ms_vaca"]  = (df.loc[mask_cms, "consumo_ms_total"] / df.loc[mask_cms, "num_vacas"]).round(4)
+
+    # ── Derivar % sobra ───────────────────────────────────────────────────
+    df["pct_sobra"] = float("nan")
+    mask_sobra = (
+        df["qtd_dieta_fornecida"].notna() &
+        df["qtd_sobra_dieta"].notna() &
+        (df["qtd_dieta_fornecida"] > 0)
+    )
+    if mask_sobra.any():
+        df.loc[mask_sobra, "pct_sobra"] = (
+            df.loc[mask_sobra, "qtd_sobra_dieta"] / df.loc[mask_sobra, "qtd_dieta_fornecida"] * 100
+        ).round(2)
+
+    # ── Derivar eficiência ────────────────────────────────────────────────
+    df["eficiencia_alimentar"] = float("nan")
+    mask_ef = (
+        df["leite_por_vaca"].notna() &
+        df["consumo_ms_vaca"].notna() &
+        (df["consumo_ms_vaca"] > 0)
+    )
+    if mask_ef.any():
+        df.loc[mask_ef, "eficiencia_alimentar"] = (
+            df.loc[mask_ef, "leite_por_vaca"] / df.loc[mask_ef, "consumo_ms_vaca"]
+        ).round(4)
 
     conn = get_connection()
-
     upload_id = insert_returning_id(conn,
         "INSERT INTO uploads (filename, num_records) VALUES (?, ?)",
         (file.filename, len(df)),
@@ -421,14 +564,17 @@ async def upload_excel(file: UploadFile = File(...)):
             row["data"].isoformat(),
             str(row["lote"]).strip(),
             int(row["num_vacas"]),
-            float(row["producao_leite_total"]),
-            float(row["leite_por_vaca"]),
-            float(row["consumo_ms_total"]),
-            float(row["consumo_ms_vaca"]),
-            float(row["percentual_forragem"]),
-            float(row["eficiencia_alimentar"]),
-            float(row["pct_ms_forragem"]) if pd.notna(row.get("pct_ms_forragem")) else None,
-            float(row["pct_ms_dieta"])    if pd.notna(row.get("pct_ms_dieta"))    else None,
+            _nullable(row.get("producao_leite_total")),
+            _nullable(row.get("leite_por_vaca")),
+            _nullable(row.get("consumo_ms_total")),
+            _nullable(row.get("consumo_ms_vaca")),
+            _nullable(row.get("percentual_forragem")),
+            _nullable(row.get("eficiencia_alimentar")),
+            _nullable(row.get("pct_ms_forragem")),
+            _nullable(row.get("pct_ms_dieta")),
+            _nullable(row.get("qtd_dieta_fornecida")),
+            _nullable(row.get("qtd_sobra_dieta")),
+            _nullable(row.get("pct_sobra")),
         )
         for _, row in df.iterrows()
     ]
@@ -439,8 +585,9 @@ async def upload_excel(file: UploadFile = File(...)):
             producao_leite_total, leite_por_vaca,
             consumo_ms_total, consumo_ms_vaca,
             percentual_forragem, eficiencia_alimentar,
-            pct_ms_forragem, pct_ms_dieta)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            pct_ms_forragem, pct_ms_dieta,
+            qtd_dieta_fornecida, qtd_sobra_dieta, pct_sobra)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         records,
     )
     conn.commit()
@@ -472,36 +619,43 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
     col_keys = [
         "fazenda", "data", "lote", "num_vacas",
         "producao_leite_total", "leite_por_vaca",
-        "consumo_ms_total", "consumo_ms_vaca",
-        "percentual_forragem", "pct_ms_forragem", "pct_ms_dieta",
+        "qtd_dieta_fornecida", "pct_ms_dieta",
+        "qtd_sobra_dieta", "percentual_forragem", "pct_ms_forragem",
     ]
     col_labels = [
         "Fazenda *", "Data *", "Lote *", "N Vacas *",
-        "Prod. Leite kg *", "Leite/Vaca kg *",
-        "CMS Total kg *", "CMS/Vaca kg *",
-        "% Forragem *", "% MS Forragem", "% MS Dieta",
+        "Prod. Leite Total kg", "Leite/Vaca kg",
+        "Dieta Fornecida kg MN *", "% MS Dieta *",
+        "Sobra kg MN", "% Forragem", "% MS Forragem",
     ]
     col_hints = [
-        "Nome da fazenda", "DD/MM/AAAA ou AAAA-MM-DD", "Ex: TOP VACA, CB1...",
-        "Numero inteiro", "kg leite total do lote", "kg leite por vaca/dia",
-        "kg MS total do lote", "kg MS por vaca/dia",
-        "0 a 100 (ex: 52.5)", "Opcional (ex: 35.0)", "Opcional (ex: 47.0)",
+        "Nome da fazenda",
+        "DD/MM/AAAA ou AAAA-MM-DD",
+        "Ex: TOP VACA, CB1...",
+        "Número inteiro",
+        "kg leite total do lote (ou use Leite/Vaca)",
+        "kg leite por vaca/dia (ou use Prod. Total)",
+        "kg de dieta fornecida (MN)",
+        "% de matéria seca da dieta (ex: 47.0)",
+        "kg de sobra (MN) — opcional",
+        "% forragem na dieta (ex: 52.5) — opcional",
+        "% MS da forragem — opcional",
     ]
-    required = [True] * 9 + [False, False]
+    required = [True, True, True, True, False, False, True, True, False, False, False]
 
     examples = [
-        ["Fazenda Sao Joao", "01/05/2026", "TOP VACA",  142, 5453, 38.4, 3522, 24.8, 52.1, 38.2, 49.6],
-        ["Fazenda Sao Joao", "01/05/2026", "TOP NOV",    98, 3205, 32.7, 2166, 22.1, 54.8, 36.9, 47.8],
-        ["Fazenda Sao Joao", "01/05/2026", "CB1",       165, 4653, 28.2, 3366, 20.4, 56.3, 35.4, 46.2],
-        ["Fazenda Sao Joao", "01/05/2026", "CB2",       134, 3296, 24.6, 2653, 19.8, 58.9, 34.1, 44.7],
-        ["Fazenda Sao Joao", "01/05/2026", "CB4",        89, 1762, 19.8, 1531, 17.2, 61.4, 32.8, 43.1],
-        ["Fazenda Sao Joao", "01/05/2026", "POS PARTO",  42, 1474, 35.1,  991, 23.6, 50.8, 39.1, 50.4],
-        ["Fazenda Sao Joao", "02/05/2026", "TOP VACA",  142, 5481, 38.6, 3536, 24.9, 52.0, 38.1, 49.5],
-        ["Fazenda Sao Joao", "02/05/2026", "TOP NOV",    98, 3224, 32.9, 2156, 22.0, 54.7, 36.8, 47.7],
-        ["Fazenda Sao Joao", "02/05/2026", "CB1",       165, 4686, 28.4, 3382, 20.5, 56.2, 35.3, 46.1],
-        ["Fazenda Sao Joao", "02/05/2026", "CB2",       134, 3243, 24.2, 2640, 19.7, 59.0, 34.0, 44.6],
-        ["Fazenda Sao Joao", "02/05/2026", "CB4",        89, 1744, 19.6, 1514, 17.0, 61.5, 32.7, 43.0],
-        ["Fazenda Sao Joao", "02/05/2026", "POS PARTO",  42, 1450, 34.5,  978, 23.3, 51.0, 39.0, 50.2],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP VACA",  142, 5453, 38.4, 8920, 49.6,  580, 52.1, 38.2],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP NOV",    98, 3205, 32.7, 5910, 47.8,  370, 54.8, 36.9],
+        ["Fazenda Sao Joao", "01/05/2026", "CB1",       165, 4653, 28.2, 9150, 46.2,  620, 56.3, 35.4],
+        ["Fazenda Sao Joao", "01/05/2026", "CB2",       134, 3296, 24.6, 7280, 44.7,  510, 58.9, 34.1],
+        ["Fazenda Sao Joao", "01/05/2026", "CB4",        89, 1762, 19.8, 4650, 43.1,  340, 61.4, 32.8],
+        ["Fazenda Sao Joao", "01/05/2026", "POS PARTO",  42, 1474, 35.1, 2540, 50.4,  160, 50.8, 39.1],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP VACA",  142, 5481, 38.6, 8950, 49.5,  575, 52.0, 38.1],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP NOV",    98, 3224, 32.9, 5940, 47.7,  368, 54.7, 36.8],
+        ["Fazenda Sao Joao", "02/05/2026", "CB1",       165, 4686, 28.4, 9200, 46.1,  628, 56.2, 35.3],
+        ["Fazenda Sao Joao", "02/05/2026", "CB2",       134, 3243, 24.2, 7310, 44.6,  505, 59.0, 34.0],
+        ["Fazenda Sao Joao", "02/05/2026", "CB4",        89, 1744, 19.6, 4680, 43.0,  342, 61.5, 32.7],
+        ["Fazenda Sao Joao", "02/05/2026", "POS PARTO",  42, 1450, 34.5, 2520, 50.2,  158, 51.0, 39.0],
     ]
 
     if fmt == "csv":
@@ -556,14 +710,17 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
     # Row 2 — instruction note
     ws.merge_cells(f"A2:{last_col}2")
     c = ws["A2"]
-    c.value = ("Preencha a partir da linha 6. Colunas com * sao obrigatorias. "
-               "As linhas 6 a 17 sao apenas exemplos — apague-as antes de enviar.")
+    c.value = (
+        "Preencha a partir da linha 6. Colunas com * sao obrigatorias. "
+        "Use producao_leite_total OU leite_por_vaca (nao precisa de ambos). "
+        "As linhas 6 a 17 sao apenas exemplos — apague-as antes de enviar."
+    )
     c.font = font(italic=True, size=10, color="2F6B3D")
     c.fill = fill("E8F2EA")
     c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
-    ws.row_dimensions[2].height = 22
+    ws.row_dimensions[2].height = 28
 
-    # Row 3 — friendly column labels (green = required, gray = optional)
+    # Row 3 — friendly column labels
     for ci, (label, req) in enumerate(zip(col_labels, required), 1):
         c = ws.cell(row=3, column=ci, value=label)
         c.font = font(bold=True, size=10, color="FFFFFF")
@@ -572,7 +729,7 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         c.border = border()
     ws.row_dimensions[3].height = 32
 
-    # Row 4 — technical key names (small, for reference)
+    # Row 4 — technical key names
     for ci, key in enumerate(col_keys, 1):
         c = ws.cell(row=4, column=ci, value=key)
         c.font = font(italic=True, size=8, color="555555")
@@ -588,9 +745,9 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         c.fill = fill("F0F7F1")
         c.alignment = align("center", wrap=True)
         c.border = border()
-    ws.row_dimensions[5].height = 34
+    ws.row_dimensions[5].height = 36
 
-    # Rows 6–17 — example data (yellow background)
+    # Rows 6–17 — example data
     for ri, row_data in enumerate(examples, 6):
         for ci, val in enumerate(row_data, 1):
             c = ws.cell(row=ri, column=ci, value=val)
@@ -600,7 +757,7 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
             c.alignment = align("left" if ci <= 3 else "right")
         ws.row_dimensions[ri].height = 18
 
-    # Rows 18–47 — empty input rows (very light green)
+    # Rows 18–47 — empty input rows
     for ri in range(18, 48):
         for ci in range(1, n_cols + 1):
             c = ws.cell(row=ri, column=ci)
@@ -610,16 +767,15 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         ws.row_dimensions[ri].height = 18
 
     # Column widths
-    for ci, w in enumerate([22, 16, 14, 10, 18, 16, 14, 14, 14, 16, 14], 1):
+    for ci, w in enumerate([22, 16, 14, 10, 18, 14, 20, 14, 14, 14, 16], 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
-    # Freeze panes so header rows stay visible while scrolling
     ws.freeze_panes = "A6"
 
     # ── Sheet 2: Instrucoes ─────────────────────────────────────────────────
     wi = wb.create_sheet("Instrucoes")
     wi.column_dimensions["A"].width = 26
-    wi.column_dimensions["B"].width = 70
+    wi.column_dimensions["B"].width = 72
 
     def wi_header(ri, text, bg):
         wi.merge_cells(f"A{ri}:B{ri}")
@@ -647,25 +803,36 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
 
     wi_header(r, "CAMPOS OBRIGATORIOS  (marcados com *)", "1A6B3A"); r += 1
     for label, desc in [
-        ("fazenda",               "Nome da fazenda. Use exatamente o mesmo nome em todos os registros."),
-        ("data",                  "Data do registro. Formatos aceitos: DD/MM/AAAA (ex: 01/05/2026) ou AAAA-MM-DD (ex: 2026-05-01)."),
-        ("lote",                  "Nome do lote. Exemplos comuns: TOP VACA, TOP NOV, CB1, CB2, CB4, POS PARTO. Use o mesmo nome consistentemente."),
-        ("num_vacas",             "Numero total de vacas no lote nessa data. Deve ser um numero inteiro (ex: 142)."),
-        ("producao_leite_total",  "Producao total de leite do lote no dia em kg (ex: 5453). E o total do lote, nao por vaca."),
-        ("leite_por_vaca",        "Producao de leite por vaca no dia em kg (ex: 38.4). Normalmente = producao_leite_total / num_vacas."),
-        ("consumo_ms_total",      "Consumo total de materia seca do lote no dia em kg (ex: 3522)."),
-        ("consumo_ms_vaca",       "Consumo de materia seca por vaca por dia em kg (ex: 24.8). Normalmente = consumo_ms_total / num_vacas."),
-        ("percentual_forragem",   "Percentual de forragem na dieta, de 0 a 100 (ex: 52.5). Meta saudavel: entre 50% e 60%."),
+        ("fazenda",              "Nome da fazenda. Use exatamente o mesmo nome em todos os registros."),
+        ("data",                 "Data do registro. Formatos aceitos: DD/MM/AAAA (ex: 01/05/2026) ou AAAA-MM-DD."),
+        ("lote",                 "Nome do lote. Exemplos: TOP VACA, TOP NOV, CB1, CB2, CB4, POS PARTO."),
+        ("num_vacas",            "Total de vacas no lote nessa data. Deve ser um numero inteiro (ex: 142)."),
+        ("qtd_dieta_fornecida",  "Quantidade total de dieta fornecida ao lote em kg de Materia Natural (MN)."),
+        ("pct_ms_dieta",         "Percentual de materia seca da dieta total (ex: 47.0). Usado para calcular o CMS."),
     ]:
         wi_row(r, label, desc, "E8F2EA"); r += 1
 
     wi.row_dimensions[r].height = 6; r += 1
-    wi_header(r, "CAMPOS OPCIONAIS  (podem ficar em branco)", "6B7568"); r += 1
+    wi_header(r, "CAMPOS OPCIONAIS  (use um ou mais conforme disponibilidade)", "6B7568"); r += 1
     for label, desc in [
-        ("pct_ms_forragem", "Percentual de materia seca da fracao forragem (ex: 35.0). Deixe em branco se nao tiver."),
-        ("pct_ms_dieta",    "Percentual de materia seca da dieta total (ex: 47.0). Deixe em branco se nao tiver."),
+        ("producao_leite_total", "Producao total de leite do lote no dia (kg). Use este OU leite_por_vaca — nao precisa de ambos."),
+        ("leite_por_vaca",       "Producao media de leite por vaca no dia (kg). Use este OU producao_leite_total."),
+        ("qtd_sobra_dieta",      "Quantidade de sobra da dieta em kg MN. Necessario para calcular % sobra e CMS real."),
+        ("percentual_forragem",  "Percentual de forragem na dieta, de 0 a 100 (ex: 52.5)."),
+        ("pct_ms_forragem",      "Percentual de materia seca da fracao forragem (ex: 35.0)."),
     ]:
         wi_row(r, label, desc, "F3F4F6"); r += 1
+
+    wi.row_dimensions[r].height = 6; r += 1
+    wi_header(r, "CALCULOS REALIZADOS AUTOMATICAMENTE", "1A6B3A"); r += 1
+    for label, desc in [
+        ("CMS/vaca",       "CMS/vaca = (Dieta fornecida - Sobra) x %MS_dieta / 100 / Num_vacas  (requer sobra)"),
+        ("Eficiencia",     "Eficiencia = Leite/vaca / CMS/vaca"),
+        ("% Sobra",        "% Sobra = Sobra / Dieta fornecida x 100"),
+        ("Leite/vaca",     "Calculado automaticamente se voce fornecer producao total"),
+        ("Prod. total",    "Calculado automaticamente se voce fornecer leite/vaca"),
+    ]:
+        wi_row(r, label, desc, "DCFCE7"); r += 1
 
     wi.row_dimensions[r].height = 6; r += 1
     wi_header(r, "DICAS E ERROS COMUNS", "D97706"); r += 1
@@ -675,7 +842,7 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         ("CORRETO",  "Apague as linhas de exemplo (6 a 17) antes de enviar."),
         ("CORRETO",  "O sistema aceita arquivos .xlsx e .csv."),
         ("ATENCAO",  "Nao altere os nomes das colunas na planilha."),
-        ("ATENCAO",  "Nao deixe celulas em branco nas colunas obrigatorias."),
+        ("ATENCAO",  "Campos em branco sao aceitos — o sistema apenas nao fara o calculo."),
         ("ATENCAO",  "Nao use formulas nas celulas — apenas valores numericos."),
     ]:
         bg = "FFFDE7" if tip[0] == "CORRETO" else "FDECEA"

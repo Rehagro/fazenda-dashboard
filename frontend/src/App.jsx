@@ -12,6 +12,7 @@ import DietTab       from './components/tabs/DietTab'
 import MonthlyTab    from './components/tabs/MonthlyTab'
 import DataTab       from './components/tabs/DataTab'
 import HistoryTab    from './components/tabs/HistoryTab'
+import SettingsTab   from './components/tabs/SettingsTab'
 import GuideTab      from './components/tabs/GuideTab'
 
 import { ACCENT_MAP } from './theme/palette'
@@ -20,6 +21,7 @@ import {
   fetchFazendas, fetchLotes, fetchDates,
   fetchKpis, fetchData, fetchBatchSum,
   fetchMonthly, fetchRaw, fetchUploads,
+  fetchMetaSobra,
 } from './api/client'
 
 const A = ACCENT_MAP.green
@@ -44,6 +46,7 @@ export default function App() {
   const [monthlyData, setMonthlyData] = useState([])
   const [rawData,     setRawData]     = useState([])
   const [uploads,     setUploads]     = useState([])
+  const [metaSobra,   setMetaSobra]   = useState([])
 
   // ── Loading ────────────────────────────────────────────────────────────
   const [loadKpis,    setLoadKpis]    = useState(true)
@@ -63,10 +66,17 @@ export default function App() {
 
   useEffect(() => {
     if (!filters.fazenda) return
-    Promise.all([fetchLotes(filters.fazenda), fetchDates(filters.fazenda)]).then(([lr, dr]) => {
+    Promise.all([
+      fetchLotes(filters.fazenda),
+      fetchDates(filters.fazenda),
+      fetchMetaSobra(filters.fazenda),
+    ]).then(([lr, dr, mr]) => {
       const ls = lr.lotes
       const minD = dr.min_date || '', maxD = dr.max_date || ''
-      setLotes(ls); setMinDate(minD); setMaxDate(maxD)
+      setLotes(ls)
+      setMinDate(minD)
+      setMaxDate(maxD)
+      setMetaSobra(mr.data || [])
       setFilters(f => ({ ...f, dataInicio: minD, dataFim: maxD, lotes: ls }))
     })
   }, [filters.fazenda]) // eslint-disable-line
@@ -114,6 +124,11 @@ export default function App() {
 
   useEffect(() => { if (tab === 'history') loadUploads() }, [tab, loadUploads])
 
+  const reloadMeta = useCallback(() => {
+    if (filters.fazenda)
+      fetchMetaSobra(filters.fazenda).then(r => setMetaSobra(r.data || []))
+  }, [filters.fazenda])
+
   const onUploadSuccess = () => {
     fetchFazendas().then(({ fazendas: list }) => setFazendas(list))
     loadAll()
@@ -132,9 +147,9 @@ export default function App() {
     const dateMap = {}
     filteredRows.forEach(r => {
       if (!dateMap[r.data_registro]) dateMap[r.data_registro] = { leite: 0, ef: 0, vacas: 0 }
-      dateMap[r.data_registro].leite += (r.leite_vaca || 0) * (r.num_vacas || 0)
-      dateMap[r.data_registro].ef    += (r.eficiencia  || 0) * (r.num_vacas || 0)
-      dateMap[r.data_registro].vacas += (r.num_vacas   || 0)
+      dateMap[r.data_registro].leite += (r.leite_por_vaca || 0) * (r.num_vacas || 0)
+      dateMap[r.data_registro].ef    += (r.eficiencia_alimentar || 0) * (r.num_vacas || 0)
+      dateMap[r.data_registro].vacas += (r.num_vacas || 0)
     })
     const sorted = Object.keys(dateMap).sort()
     const rebanhoLeite = sorted.map(d => dateMap[d].vacas > 0 ? dateMap[d].leite / dateMap[d].vacas : 0)
@@ -147,7 +162,7 @@ export default function App() {
     return { rebanhoLeite, rebanhoEf, leiteTrend, efTrend }
   }, [filteredRows])
 
-  // ── Build colors from actual lotes (fallback palette for unknown lotes) ──
+  // ── Build colors from actual lotes ───────────────────────────────────
   const activeLotes = filters.lotes.length ? filters.lotes : lotes
   const colorsMap = useMemo(
     () => Object.fromEntries(activeLotes.map((l, i) => [l, getLoteColor(l, i)])),
@@ -167,6 +182,8 @@ export default function App() {
     efTrend,
     monthly:     monthlyData,
     fazendas,
+    filters,
+    metaSobra,
     loadKpis,
     loadBatch,
   }
@@ -203,6 +220,7 @@ export default function App() {
         {tab === 'monthly'    && <MonthlyTab    ctx={ctx} A={A} />}
         {tab === 'data'       && <DataTab       ctx={ctx} A={A} rawData={rawData} />}
         {tab === 'history'    && <HistoryTab    A={A} uploads={uploads} onUploadClick={() => setUploadOpen(true)} />}
+        {tab === 'settings'   && <SettingsTab   ctx={ctx} A={A} metaSobra={metaSobra} onMetaChange={reloadMeta} />}
         {tab === 'guide'      && <GuideTab      A={A} />}
       </DashboardShell>
 

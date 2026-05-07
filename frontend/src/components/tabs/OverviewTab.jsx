@@ -63,7 +63,7 @@ export default function OverviewTab({ ctx, A }) {
   const efSeries = lotes.map(l => ({
     label: l,
     color: colors[l],
-    values: rows.filter(r => r.lote === l).map(r => r.eficiencia),
+    values: rows.filter(r => r.lote === l).map(r => r.eficiencia_alimentar),
   }))
 
   const kpis = [

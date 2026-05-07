@@ -9,9 +9,9 @@ export default function MonthlyTab({ ctx, A }) {
   const months = [...new Set(monthly.map(m => m.mes))].sort()
   const mNames = months.map(m => monthName(m))
 
-  const efSeries    = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.eficiencia ?? 0) }))
-  const leiteSeries = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.leite_vaca ?? 0) }))
-  const cmsSeries   = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.ms_vaca ?? 0) }))
+  const efSeries    = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.eficiencia_pond ?? 0) }))
+  const leiteSeries = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.leite_vaca_pond ?? 0) }))
+  const cmsSeries   = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: months.map(m => monthly.find(r => r.lote === l && r.mes === m)?.ms_vaca_pond ?? 0) }))
 
   const Legend = ({ series }) => (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, paddingTop: 8, borderTop: `1px dashed ${A.primaryLight}`, marginTop: 4 }}>
@@ -77,10 +77,10 @@ export default function MonthlyTab({ ctx, A }) {
                     </span>
                   </td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtInt(r.avg_vacas)}</td>
-                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{fmt(r.leite_vaca, 1)}</td>
-                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.ms_vaca, 1)}</td>
-                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{(r.eficiencia || 0).toFixed(3)}</td>
-                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.pct_forragem, 1)}%</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{fmt(r.leite_vaca_pond, 1)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.ms_vaca_pond, 1)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{(r.eficiencia_pond || 0).toFixed(3)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.avg_forragem, 1)}%</td>
                 </tr>
               ))}
             </tbody>

@@ -14,9 +14,10 @@ const NAV = [
   {
     group: 'Dados',
     items: [
-      { id: 'data',    label: 'Dados Brutos', icon: 'table' },
-      { id: 'history', label: 'Uploads',      icon: 'upload' },
-      { id: 'guide',   label: 'Orientações',  icon: 'book' },
+      { id: 'data',     label: 'Dados Brutos',   icon: 'table' },
+      { id: 'history',  label: 'Uploads',         icon: 'upload' },
+      { id: 'settings', label: 'Configurações',   icon: 'settings' },
+      { id: 'guide',    label: 'Orientações',     icon: 'book' },
     ],
   },
 ]

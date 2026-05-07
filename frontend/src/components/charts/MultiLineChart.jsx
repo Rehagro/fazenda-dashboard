@@ -3,13 +3,15 @@ export default function MultiLineChart({
   padding = { top: 16, right: 16, bottom: 28, left: 36 },
   formatY = (v) => v,
   width = 560,
+  refLines = [],  // [{ value, color, label, dashed }]
 }) {
   if (!series || !series.length) return null
   const innerW = width - padding.left - padding.right
   const innerH = height - padding.top - padding.bottom
-  const allVals = series.flatMap(s => s.values)
-  const min = Math.min(...allVals)
-  const max = Math.max(...allVals)
+  const allVals = series.flatMap(s => s.values).filter(v => v != null && !isNaN(v))
+  const refVals = refLines.map(r => r.value).filter(v => v != null)
+  const min = Math.min(...allVals, ...refVals)
+  const max = Math.max(...allVals, ...refVals)
   const range = max - min || 1
   const pad = range * 0.1
   const yMin = min - pad, yMax = max + pad, yRange = yMax - yMin
@@ -34,6 +36,23 @@ export default function MultiLineChart({
             opacity={s.dimmed ? 0.25 : 1} strokeDasharray={s.dashed ? '4 3' : ''} />
         )
       })}
+      {refLines.map((r, i) => (
+        <g key={i}>
+          <line
+            x1={padding.left} y1={y(r.value)}
+            x2={width - padding.right} y2={y(r.value)}
+            stroke={r.color || '#94a3b8'} strokeWidth={1.4}
+            strokeDasharray={r.dashed !== false ? '5 3' : ''}
+            opacity={0.8}
+          />
+          {r.label && (
+            <text x={width - padding.right + 4} y={y(r.value) + 4}
+              fontSize="9" fill={r.color || '#94a3b8'} fontFamily="inherit">
+              {r.label}
+            </text>
+          )}
+        </g>
+      ))}
     </svg>
   )
 }

@@ -26,7 +26,7 @@ export default function LotesTab({ ctx, A }) {
         {batch.map(b => {
           const c = colors[b.lote] || '#888'
           const lotRows = rows.filter(r => r.lote === b.lote)
-          const leiteSpark = lotRows.map(r => r.leite_vaca)
+          const leiteSpark = lotRows.map(r => r.leite_por_vaca)
           return (
             <div key={b.lote} style={{ background: '#fff', borderRadius: 16, padding: '20px 22px', border: `1px solid ${A.primaryLight}` }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

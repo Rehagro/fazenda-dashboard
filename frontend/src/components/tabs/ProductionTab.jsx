@@ -8,7 +8,7 @@ import { fmt, fmtInt } from '../../utils/format'
 export default function ProductionTab({ ctx, A }) {
   const { lotes, colors, batch, rows, rebanhoLeite, leiteTrend, k } = ctx
 
-  const series = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: rows.filter(r => r.lote === l).map(r => r.leite_vaca) }))
+  const series = lotes.map(l => ({ label: l, color: colors[l] || '#888', values: rows.filter(r => r.lote === l).map(r => r.leite_por_vaca) }))
   series.push({ label: 'Rebanho', color: '#1e3a5f', values: rebanhoLeite, thick: true, dashed: true })
 
   return (

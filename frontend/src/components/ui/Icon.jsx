@@ -33,6 +33,9 @@ export default function Icon({ name, size = 18, strokeWidth = 1.8, style }) {
     chevDown: <path d="M6 9 l 6 6 l 6 -6" />,
     chevRight:<path d="M9 6 l 6 6 l -6 6" />,
     plus:     <><path d="M12 5 v 14" /><path d="M5 12 h 14" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></>,
+    save:     <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>,
+    trash:    <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></>,
   }
   return <svg {...props}>{paths[name] || null}</svg>
 }
