@@ -5,8 +5,9 @@
 @layer base {
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
+  *, *::before, *::after { box-sizing: border-box; }
 }
 
 @layer components {
