@@ -37,6 +37,17 @@ export default function DualAxisChart({
 }) {
   const [containerRef, svgWidth] = useContainerWidth()
   const [hoverIdx, setHoverIdx] = useState(null)
+  // ref para que handleMouseMove leia valores atualizados sem precisar de deps
+  const chartRef = useRef({ padLeft: pad.left, stepX: 1, len: 1 })
+
+  // todos os hooks ANTES de qualquer return condicional
+  const handleMouseMove = useCallback(e => {
+    const svg = e.currentTarget.closest('svg')
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const { padLeft, stepX, len } = chartRef.current
+    setHoverIdx(Math.max(0, Math.min(len - 1, Math.round((e.clientX - rect.left - padLeft) / stepX))))
+  }, [])
 
   if (!dates.length) return <div ref={containerRef} style={{ height }} />
 
@@ -45,6 +56,9 @@ export default function DualAxisChart({
   const len    = dates.length
   const stepX  = innerW / Math.max(len - 1, 1)
   const xPos   = i => pad.left + i * stepX
+
+  // atualiza ref com valores computados para uso no handler
+  chartRef.current = { padLeft: pad.left, stepX, len }
 
   function scaleFor(list) {
     const vals = list.flatMap(s => (s.values || []).filter(v => v != null && !isNaN(v)))
@@ -79,14 +93,6 @@ export default function DualAxisChart({
   const lblStep = len <= maxL ? 1 : Math.floor((len - 1) / (maxL - 1))
   const xLabelIdxs = new Set([0, len - 1])
   for (let i = lblStep; i < len - 1; i += lblStep) xLabelIdxs.add(i)
-
-  const handleMouseMove = useCallback(e => {
-    const svg = e.currentTarget.closest('svg')
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
-    const mx = e.clientX - rect.left - pad.left
-    setHoverIdx(Math.max(0, Math.min(len - 1, Math.round(mx / stepX))))
-  }, [pad.left, stepX, len])
 
   const hx = hoverIdx != null ? xPos(hoverIdx) : 0
   const tooltipRight = svgWidth > 0 && hx > svgWidth * 0.55

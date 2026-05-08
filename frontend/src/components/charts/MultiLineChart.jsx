@@ -32,6 +32,18 @@ export default function MultiLineChart({
 }) {
   const [containerRef, svgWidth] = useContainerWidth()
   const [hoverIdx, setHoverIdx] = useState(null)
+  // ref para que handleMouseMove leia valores atualizados sem precisar de deps
+  const chartRef = useRef({ padLeft: 46, stepX: 1, len: 1 })
+
+  // todos os hooks ANTES de qualquer return condicional
+  const handleMouseMove = useCallback(e => {
+    const svg = e.currentTarget.closest('svg')
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const { padLeft, stepX, len } = chartRef.current
+    const i = Math.round((e.clientX - rect.left - padLeft) / stepX)
+    setHoverIdx(Math.max(0, Math.min(len - 1, i)))
+  }, [])
 
   if (!series.length) return <div ref={containerRef} />
 
@@ -63,6 +75,9 @@ export default function MultiLineChart({
   const yPos = v => pad.top + innerH - ((v - yMin) / yRange) * innerH
   const ticks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i / 4))
 
+  // atualiza ref com valores computados para uso no handler
+  chartRef.current = { padLeft: pad.left, stepX, len }
+
   // X-axis: máx 8 labels distribuídos
   const maxL = Math.min(8, len)
   const lblStep = len <= maxL ? 1 : Math.floor((len - 1) / (maxL - 1))
@@ -70,15 +85,6 @@ export default function MultiLineChart({
   xLabelIdxs.add(0)
   xLabelIdxs.add(len - 1)
   for (let i = lblStep; i < len - 1; i += lblStep) xLabelIdxs.add(i)
-
-  const handleMouseMove = useCallback(e => {
-    const svg = e.currentTarget.closest('svg')
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
-    const mx = e.clientX - rect.left - pad.left
-    const i = Math.round(mx / stepX)
-    setHoverIdx(Math.max(0, Math.min(len - 1, i)))
-  }, [pad.left, stepX, len])
 
   // Tooltip position: evitar sair da tela
   const tooltipX = hoverIdx != null ? xPos(hoverIdx) : 0
