@@ -437,9 +437,33 @@ REQUIRED_COLS = {"fazenda", "data", "lote", "num_vacas"}
 # Colunas opcionais reconhecidas
 OPTIONAL_COLS = {
     "producao_leite_total", "leite_por_vaca",
+    "num_cabecas_tratadas", "kg_mn_dieta_cabeca",
     "qtd_dieta_fornecida", "pct_ms_dieta", "qtd_sobra_dieta",
     "percentual_forragem", "pct_ms_forragem",
 }
+
+
+_NUMERIC_INPUT_COLS = {
+    "num_vacas", "producao_leite_total", "leite_por_vaca",
+    "num_cabecas_tratadas", "kg_mn_dieta_cabeca",
+    "qtd_dieta_fornecida", "pct_ms_dieta", "qtd_sobra_dieta",
+    "percentual_forragem", "pct_ms_forragem",
+}
+
+
+def _fix_decimal(val):
+    """Normaliza separador decimal: aceita vírgula ou ponto."""
+    if not isinstance(val, str):
+        return val
+    val = val.strip()
+    if not val:
+        return val
+    if "," in val and "." in val:
+        # Formato BR "1.234,56" → "1234.56"
+        val = val.replace(".", "").replace(",", ".")
+    elif "," in val:
+        val = val.replace(",", ".")
+    return val
 
 
 def _nullable(val) -> Optional[float]:
@@ -469,11 +493,23 @@ async def upload_excel(file: UploadFile = File(...)):
                 enc = "latin-1"
             df = pd.read_csv(io.BytesIO(content), encoding=enc, sep=None, engine="python")
         else:
-            df = pd.read_excel(io.BytesIO(content))
+            # Try simple format first (header in row 1)
+            df_try = pd.read_excel(io.BytesIO(content))
+            cols_try = {str(c).strip().lower().replace(" ", "_") for c in df_try.columns if pd.notna(c)}
+            if REQUIRED_COLS.issubset(cols_try):
+                df = df_try
+            else:
+                # Template format: row 4 has technical keys; skip title/instructions/labels/hints rows
+                df = pd.read_excel(io.BytesIO(content), header=0, skiprows=[0, 1, 2, 4])
     except Exception as e:
         raise HTTPException(400, f"Erro ao ler arquivo: {e}")
 
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+
+    # Normaliza separador decimal em colunas numéricas (aceita vírgula ou ponto)
+    for _col in _NUMERIC_INPUT_COLS:
+        if _col in df.columns and df[_col].dtype == object:
+            df[_col] = df[_col].apply(_fix_decimal)
 
     # Aceita num_cabecas como alias de num_vacas
     if "num_cabecas" in df.columns and "num_vacas" not in df.columns:
@@ -511,6 +547,16 @@ async def upload_excel(file: UploadFile = File(...)):
     mask_a = ~has_total & has_avg
     df.loc[mask_t, "leite_por_vaca"]        = (df.loc[mask_t, "producao_leite_total"] / nv.loc[mask_t]).round(4)
     df.loc[mask_a, "producao_leite_total"]  = (df.loc[mask_a, "leite_por_vaca"] * df.loc[mask_a, "num_vacas"]).round(1)
+
+    # ── Derivar qtd_dieta_fornecida (cab. tratadas × kg MN/cab.) ─────────
+    has_dieta = df["qtd_dieta_fornecida"].notna()
+    has_cab   = df["num_cabecas_tratadas"].notna() & df["kg_mn_dieta_cabeca"].notna()
+    mask_dieta_calc = ~has_dieta & has_cab
+    if mask_dieta_calc.any():
+        df.loc[mask_dieta_calc, "qtd_dieta_fornecida"] = (
+            df.loc[mask_dieta_calc, "num_cabecas_tratadas"] *
+            df.loc[mask_dieta_calc, "kg_mn_dieta_cabeca"]
+        ).round(1)
 
     # ── Derivar CMS ───────────────────────────────────────────────────────
     df["consumo_ms_total"] = float("nan")
@@ -619,13 +665,15 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
     col_keys = [
         "fazenda", "data", "lote", "num_vacas",
         "producao_leite_total", "leite_por_vaca",
+        "num_cabecas_tratadas", "kg_mn_dieta_cabeca",
         "qtd_dieta_fornecida", "pct_ms_dieta",
         "qtd_sobra_dieta", "percentual_forragem", "pct_ms_forragem",
     ]
     col_labels = [
         "Fazenda *", "Data *", "Lote *", "N Vacas *",
         "Prod. Leite Total kg", "Leite/Vaca kg",
-        "Dieta Fornecida kg MN *", "% MS Dieta *",
+        "Cab. Tratadas", "kg MN/Cab. Tratada",
+        "Dieta Fornecida kg MN", "% MS Dieta *",
         "Sobra kg MN", "% Forragem", "% MS Forragem",
     ]
     col_hints = [
@@ -635,27 +683,31 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         "Número inteiro",
         "kg leite total do lote (ou use Leite/Vaca)",
         "kg leite por vaca/dia (ou use Prod. Total)",
-        "kg de dieta fornecida (MN)",
-        "% de matéria seca da dieta (ex: 47.0)",
+        "Cab. tratadas com a dieta (use com kg MN/Cab.)",
+        "kg MN de dieta por cab. tratada (use com Cab. Tratadas)",
+        "kg dieta total MN (ou use Cab. Tratadas × kg MN/Cab.)",
+        "% matéria seca da dieta (ex: 47,0 ou 47.0) *",
         "kg de sobra (MN) — opcional",
-        "% forragem na dieta (ex: 52.5) — opcional",
+        "% forragem na dieta (ex: 52,5) — opcional",
         "% MS da forragem — opcional",
     ]
-    required = [True, True, True, True, False, False, True, True, False, False, False]
+    required = [True, True, True, True, False, False, False, False, False, True, False, False, False]
 
+    # Colunas: fazenda, data, lote, num_vacas, prod_leite_total, leite_vaca,
+    #          cab_tratadas, kg_mn_cab, dieta_total, pct_ms, sobra, pct_forr, pct_ms_forr
     examples = [
-        ["Fazenda Sao Joao", "01/05/2026", "TOP VACA",  142, 5453, 38.4, 8920, 49.6,  580, 52.1, 38.2],
-        ["Fazenda Sao Joao", "01/05/2026", "TOP NOV",    98, 3205, 32.7, 5910, 47.8,  370, 54.8, 36.9],
-        ["Fazenda Sao Joao", "01/05/2026", "CB1",       165, 4653, 28.2, 9150, 46.2,  620, 56.3, 35.4],
-        ["Fazenda Sao Joao", "01/05/2026", "CB2",       134, 3296, 24.6, 7280, 44.7,  510, 58.9, 34.1],
-        ["Fazenda Sao Joao", "01/05/2026", "CB4",        89, 1762, 19.8, 4650, 43.1,  340, 61.4, 32.8],
-        ["Fazenda Sao Joao", "01/05/2026", "POS PARTO",  42, 1474, 35.1, 2540, 50.4,  160, 50.8, 39.1],
-        ["Fazenda Sao Joao", "02/05/2026", "TOP VACA",  142, 5481, 38.6, 8950, 49.5,  575, 52.0, 38.1],
-        ["Fazenda Sao Joao", "02/05/2026", "TOP NOV",    98, 3224, 32.9, 5940, 47.7,  368, 54.7, 36.8],
-        ["Fazenda Sao Joao", "02/05/2026", "CB1",       165, 4686, 28.4, 9200, 46.1,  628, 56.2, 35.3],
-        ["Fazenda Sao Joao", "02/05/2026", "CB2",       134, 3243, 24.2, 7310, 44.6,  505, 59.0, 34.0],
-        ["Fazenda Sao Joao", "02/05/2026", "CB4",        89, 1744, 19.6, 4680, 43.0,  342, 61.5, 32.7],
-        ["Fazenda Sao Joao", "02/05/2026", "POS PARTO",  42, 1450, 34.5, 2520, 50.2,  158, 51.0, 39.0],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP VACA",  142, 5453, 38.4, None, None, 8920, 49.6,  580, 52.1, 38.2],
+        ["Fazenda Sao Joao", "01/05/2026", "TOP NOV",    98, 3205, 32.7, None, None, 5910, 47.8,  370, 54.8, 36.9],
+        ["Fazenda Sao Joao", "01/05/2026", "CB1",       165, 4653, 28.2, None, None, 9150, 46.2,  620, 56.3, 35.4],
+        ["Fazenda Sao Joao", "01/05/2026", "CB2",       134, 3296, 24.6, None, None, 7280, 44.7,  510, 58.9, 34.1],
+        ["Fazenda Sao Joao", "01/05/2026", "CB4",        89, 1762, 19.8,  85, 55.0, None, 43.1,  340, 61.4, 32.8],
+        ["Fazenda Sao Joao", "01/05/2026", "POS PARTO",  42, 1474, 35.1,  40, 63.5, None, 50.4,  160, 50.8, 39.1],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP VACA",  142, 5481, 38.6, None, None, 8950, 49.5,  575, 52.0, 38.1],
+        ["Fazenda Sao Joao", "02/05/2026", "TOP NOV",    98, 3224, 32.9, None, None, 5940, 47.7,  368, 54.7, 36.8],
+        ["Fazenda Sao Joao", "02/05/2026", "CB1",       165, 4686, 28.4, None, None, 9200, 46.1,  628, 56.2, 35.3],
+        ["Fazenda Sao Joao", "02/05/2026", "CB2",       134, 3243, 24.2, None, None, 7310, 44.6,  505, 59.0, 34.0],
+        ["Fazenda Sao Joao", "02/05/2026", "CB4",        89, 1744, 19.6,  85, 55.2, None, 43.0,  342, 61.5, 32.7],
+        ["Fazenda Sao Joao", "02/05/2026", "POS PARTO",  42, 1450, 34.5,  40, 63.0, None, 50.2,  158, 51.0, 39.0],
     ]
 
     if fmt == "csv":
@@ -767,7 +819,7 @@ def download_template(fmt: str = Query("xlsx", pattern="^(xlsx|csv)$")):
         ws.row_dimensions[ri].height = 18
 
     # Column widths
-    for ci, w in enumerate([22, 16, 14, 10, 18, 14, 20, 14, 14, 14, 16], 1):
+    for ci, w in enumerate([22, 16, 14, 10, 18, 14, 14, 16, 20, 14, 14, 14, 16], 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
     ws.freeze_panes = "A6"
