@@ -44,7 +44,7 @@ export default function MonthlyTab({ ctx, A }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <Card A={A} eyebrow="kg leite / kg MS · evolução diária" title="Eficiência alimentar">
-          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2)} />
+          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2).replace('.', ',')} />
           <Legend series={efSeries} />
         </Card>
         <Card A={A} eyebrow="kg/vaca/dia · evolução diária" title="Leite por vaca">
@@ -54,7 +54,7 @@ export default function MonthlyTab({ ctx, A }) {
       </div>
 
       <Card A={A} eyebrow="kg MS/vaca/dia · evolução diária" title="CMS por vaca">
-        <MultiLineChart series={cmsSeries} dates={allDates} height={240} formatY={v => v.toFixed(1)} />
+        <MultiLineChart series={cmsSeries} dates={allDates} height={240} formatY={v => v.toFixed(1).replace('.', ',')} />
         <Legend series={cmsSeries} />
       </Card>
 

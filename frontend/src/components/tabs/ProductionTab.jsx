@@ -50,7 +50,7 @@ export default function ProductionTab({ ctx, A }) {
         <HBarChart
           items={[...batch].sort((a, b) => b.leite_vaca_pond - a.leite_vaca_pond).map(b => ({ label: b.lote, value: b.leite_vaca_pond, color: colors[b.lote] || '#888' }))}
           max={42}
-          formatVal={v => `${v.toFixed(1)} kg`}
+          formatVal={v => `${v.toFixed(1).replace('.', ',')} kg`}
         />
       </Card>
     </>

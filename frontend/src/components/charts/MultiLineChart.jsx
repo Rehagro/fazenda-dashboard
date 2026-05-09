@@ -44,7 +44,7 @@ export default function MultiLineChart({
   series = [],
   dates = [],
   height = 240,
-  formatY = v => Number(v).toFixed(1),
+  formatY = v => Number(v).toFixed(1).replace('.', ','),
   refLines = [],
 }) {
   const [containerRef, svgWidth] = useContainerWidth()

@@ -91,7 +91,7 @@ export default function OverviewTab({ ctx, A }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
         <Card A={A} eyebrow="Eficiência por lote" title="kg leite por kg MS · últimos 30 dias" right={<PeriodToggle A={A} />}>
-          <MultiLineChart series={efSeries} dates={allDates} height={240} formatY={v => v.toFixed(2)} />
+          <MultiLineChart series={efSeries} dates={allDates} height={240} formatY={v => v.toFixed(2).replace('.', ',')} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${A.primaryLight}` }}>
             {efSeries.map(s => (
               <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#3a4438' }}>
@@ -108,7 +108,7 @@ export default function OverviewTab({ ctx, A }) {
               label: b.lote, value: b.avg_forragem, color: colors[b.lote],
             }))}
             max={65}
-            formatVal={v => `${v.toFixed(1)}%`}
+            formatVal={v => `${v.toFixed(1).replace('.', ',')}%`}
           />
           <div style={{ marginTop: 14, padding: 10, background: A.bg, borderRadius: 10, fontSize: 11.5, color: '#3a4438', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <Icon name="info" size={14} style={{ color: '#6b7568', flexShrink: 0, marginTop: 1 }} />

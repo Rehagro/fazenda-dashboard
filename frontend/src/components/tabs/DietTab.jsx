@@ -204,14 +204,14 @@ export default function DietTab({ ctx, A }) {
 
       {/* CMS/vaca por lote */}
       <Card A={A} eyebrow="Evolução diária por lote" title="CMS por vaca · kg MS/vaca/dia">
-        <MultiLineChart series={cmsSeries} dates={allDates} height={300} formatY={v => v.toFixed(1)} />
+        <MultiLineChart series={cmsSeries} dates={allDates} height={300} formatY={v => v.toFixed(1).replace('.', ',')} />
         <Legend series={cmsSeries} />
       </Card>
 
       {/* Eficiência + % Forragem */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
         <Card A={A} eyebrow="Eficiência alimentar" title="kg leite / kg MS · evolução por lote">
-          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2)} />
+          <MultiLineChart series={efSeries} dates={allDates} height={220} formatY={v => v.toFixed(2).replace('.', ',')} />
           <Legend series={efSeries} />
         </Card>
 
@@ -221,7 +221,7 @@ export default function DietTab({ ctx, A }) {
               label: b.lote, value: b.avg_forragem, color: colors[b.lote],
             }))}
             max={70}
-            formatVal={v => `${v.toFixed(1)}%`}
+            formatVal={v => `${v.toFixed(1).replace('.', ',')}%`}
           />
           <div style={{ marginTop: 12, padding: 10, background: A.bg, borderRadius: 10, fontSize: 11.5, color: '#3a4438' }}>
             Meta saudável: <strong>50–60%</strong> forragem na dieta
@@ -236,7 +236,7 @@ export default function DietTab({ ctx, A }) {
             series={sobraSeries}
             dates={allDates}
             height={220}
-            formatY={v => `${v.toFixed(1)}%`}
+            formatY={v => `${v.toFixed(1).replace('.', ',')}%`}
             refLines={sobraRefLines}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12, paddingTop: 12, borderTop: '1px dashed #d4e8d4', alignItems: 'center' }}>
@@ -296,7 +296,7 @@ export default function DietTab({ ctx, A }) {
                 seriesLeft={dualCmsLeft}
                 seriesRight={dualForrRight}
                 height={240}
-                formatLeft={v => v.toFixed(1)}
+                formatLeft={v => v.toFixed(1).replace('.', ',')}
                 formatRight={v => `${v.toFixed(0)}%`}
               />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 12, paddingTop: 12, borderTop: '1px dashed #d4e8d4' }}>
@@ -322,7 +322,7 @@ export default function DietTab({ ctx, A }) {
                 seriesLeft={dualLeiteLeft}
                 seriesRight={dualForrRight}
                 height={240}
-                formatLeft={v => v.toFixed(1)}
+                formatLeft={v => v.toFixed(1).replace('.', ',')}
                 formatRight={v => `${v.toFixed(0)}%`}
               />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 12, paddingTop: 12, borderTop: '1px dashed #d4e8d4' }}>
