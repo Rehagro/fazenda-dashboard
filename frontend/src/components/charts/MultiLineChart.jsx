@@ -12,10 +12,27 @@ function useContainerWidth(fallback = 560) {
   return [ref, w]
 }
 
+const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
 function fmtDateLabel(str) {
   if (!str) return ''
   const p = str.split('-')
-  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : str
+  return p.length === 3 ? `${p[2]}/${MONTHS_PT[Number(p[1]) - 1]}` : str
+}
+
+function niceScale(lo, hi, n = 5) {
+  if (lo === hi) { lo -= 1; hi += 1 }
+  const rawStep = (hi - lo) / (n - 1)
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const niceStep = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= rawStep) || mag
+  const niceMin = Math.floor(lo / niceStep) * niceStep
+  const ticks = Array.from({ length: n }, (_, i) =>
+    parseFloat((niceMin + i * niceStep).toFixed(10))
+  )
+  return { ticks, yMin: ticks[0], yMax: ticks[ticks.length - 1], step: niceStep }
+}
+
+function fmtTick(v, step) {
+  return v.toFixed(step >= 1 ? 0 : 1).replace('.', ',')
 }
 
 /**
@@ -66,14 +83,13 @@ export default function MultiLineChart({
   const lo = Math.min(...allVals, ...refVals)
   const hi = Math.max(...allVals, ...refVals)
   const rng = hi - lo || 1
-  const ypad = rng * 0.12
-  const yMin = lo - ypad, yMax = hi + ypad, yRange = yMax - yMin
+  const { ticks, yMin, yMax, step: niceStep } = niceScale(lo - rng * 0.06, hi + rng * 0.06)
+  const yRange = yMax - yMin
 
   const len = Math.max(...series.map(s => (s.values || []).length), dates.length, 1)
   const stepX = innerW / Math.max(len - 1, 1)
   const xPos = i => pad.left + i * stepX
   const yPos = v => pad.top + innerH - ((v - yMin) / yRange) * innerH
-  const ticks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i / 4))
 
   // atualiza ref com valores computados para uso no handler
   chartRef.current = { padLeft: pad.left, stepX, len }
@@ -116,19 +132,19 @@ export default function MultiLineChart({
             <line
               x1={pad.left} y1={yPos(v)}
               x2={svgWidth - pad.right} y2={yPos(v)}
-              stroke="rgba(0,0,0,0.05)" strokeDasharray="2 4"
+              stroke="rgba(0,0,0,0.07)" strokeDasharray="3 5"
             />
             <text
               x={pad.left - 7} y={yPos(v) + 4}
-              fontSize="10" fill="rgba(0,0,0,0.38)"
+              fontSize="11" fill="#64748b"
               textAnchor="end" fontFamily="inherit"
             >
-              {formatY(v)}
+              {fmtTick(v, niceStep)}
             </text>
           </g>
         ))}
 
-        {/* Eixo X — datas DD/MM/AA */}
+        {/* Eixo X — datas DD/mês */}
         {showDates && [...xLabelIdxs].map(i => {
           const d = dates[i]
           if (!d) return null
@@ -136,7 +152,7 @@ export default function MultiLineChart({
             <text
               key={i}
               x={xPos(i)} y={height - pad.bottom + 18}
-              fontSize="9.5" fill="#9ca299"
+              fontSize="10.5" fill="#64748b"
               textAnchor="middle" fontFamily="inherit"
             >
               {fmtDateLabel(d)}
@@ -160,7 +176,7 @@ export default function MultiLineChart({
               key={s.label}
               d={d}
               stroke={s.color}
-              strokeWidth={s.thick ? 2.6 : 1.8}
+              strokeWidth={s.thick ? 2.8 : 2.2}
               fill="none"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -169,6 +185,21 @@ export default function MultiLineChart({
             />
           )
         })}
+
+        {/* Pontos permanentes nos dados (até 20 datas) */}
+        {len <= 20 && series.map(s =>
+          (s.values || []).map((v, i) => {
+            if (v == null || isNaN(v) || s.dimmed) return null
+            return (
+              <circle
+                key={`${s.label}-${i}`}
+                cx={xPos(i)} cy={yPos(v)}
+                r={2.5} fill={s.color} stroke="#fff" strokeWidth={1.5}
+                opacity={0.9}
+              />
+            )
+          })
+        )}
 
         {/* Linhas de referência (metas) */}
         {refLines.map((r, i) => (

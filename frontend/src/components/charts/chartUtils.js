@@ -6,6 +6,7 @@ const FIXED_COLORS = {
   'CB2':       '#d97706',
   'CB4':       '#dc2626',
   'PÓS PARTO': '#db2777',
+  'POS PARTO': '#db2777',
 }
 
 const PALETTE = [
